@@ -123,6 +123,17 @@ target_link_libraries(cuas_pipeline PUBLIC
 add_executable(cuas_tracker src/main.cpp)
 target_link_libraries(cuas_tracker PRIVATE cuas_pipeline)
 
+# Copy config directory next to the executable so it can be found at runtime
+# regardless of the working directory or multi-config generator (Debug/Release).
+add_custom_command(TARGET cuas_tracker POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:cuas_tracker>/config"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/tracker_config.json"
+        "$<TARGET_FILE_DIR:cuas_tracker>/config/tracker_config.json"
+    COMMENT "Copying tracker_config.json to output directory"
+)
+
 # ---------------------------------------------------------------------------
 # Simulators
 # ---------------------------------------------------------------------------
