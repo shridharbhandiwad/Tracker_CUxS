@@ -17,10 +17,7 @@ TrackManager::TrackManager(const TrackerConfig& cfg) : config_(cfg) {
         cfg.prediction);
 
     // Measurement noise (position uncertainty in Cartesian)
-    double sigR  = 25.0;  // range std in meters
-    double sigAz = 0.01;  // azimuth std in radians
-    double sigEl = 0.01;  // elevation std in radians
-    // Approximate Cartesian noise at medium range
+    double sigR = 25.0;
     double posNoise = sigR * sigR;
     for (int i = 0; i < MEAS_DIM; ++i)
         for (int j = 0; j < MEAS_DIM; ++j)

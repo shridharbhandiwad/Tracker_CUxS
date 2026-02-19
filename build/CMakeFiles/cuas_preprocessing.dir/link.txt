@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcuas_preprocessing.a CMakeFiles/cuas_preprocessing.dir/src/preprocessing/preprocessor.cpp.o
+/usr/bin/ranlib libcuas_preprocessing.a

@@ -1,0 +1,1 @@
+/usr/bin/g++ -O3 -DNDEBUG CMakeFiles/log_extractor.dir/simulators/log_extractor/log_extractor.cpp.o -o log_extractor  libcuas_common.a -lpthread 

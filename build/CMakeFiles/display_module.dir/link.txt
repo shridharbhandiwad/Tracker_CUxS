@@ -1,0 +1,1 @@
+/usr/bin/g++ -O3 -DNDEBUG CMakeFiles/display_module.dir/simulators/display_module/display_module.cpp.o -o display_module  libcuas_common.a -lpthread 

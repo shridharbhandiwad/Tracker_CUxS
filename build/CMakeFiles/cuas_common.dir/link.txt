@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcuas_common.a CMakeFiles/cuas_common.dir/src/common/config.cpp.o CMakeFiles/cuas_common.dir/src/common/logger.cpp.o CMakeFiles/cuas_common.dir/src/common/udp_socket.cpp.o
+/usr/bin/ranlib libcuas_common.a

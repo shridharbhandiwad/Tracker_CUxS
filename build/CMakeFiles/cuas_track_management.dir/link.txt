@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcuas_track_management.a CMakeFiles/cuas_track_management.dir/src/track_management/track.cpp.o CMakeFiles/cuas_track_management.dir/src/track_management/track_initiator.cpp.o CMakeFiles/cuas_track_management.dir/src/track_management/track_manager.cpp.o
+/usr/bin/ranlib libcuas_track_management.a

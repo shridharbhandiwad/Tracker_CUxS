@@ -91,7 +91,6 @@ void printTrackTable(const std::vector<cuas::TrackUpdateMessage>& tracks) {
     for (const auto& t : tracks) {
         double azDeg = t.azimuth * cuas::RAD2DEG;
         double elDeg = t.elevation * cuas::RAD2DEG;
-        double speed = std::sqrt(t.vx * t.vx + t.vy * t.vy + t.vz * t.vz);
 
         std::cout << std::setw(5)  << t.trackId
                   << std::setw(8)  << statusToString(t.status)

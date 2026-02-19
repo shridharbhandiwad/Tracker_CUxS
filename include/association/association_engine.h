@@ -3,6 +3,7 @@
 #include "common/types.h"
 #include "common/config.h"
 #include "prediction/imm_filter.h"
+#include "track_management/track.h"
 #include <vector>
 #include <memory>
 
@@ -19,9 +20,6 @@ struct AssociationOutput {
     std::vector<int> unmatchedTracks;
     std::vector<int> unmatchedClusters;
 };
-
-// Forward declaration
-class Track;
 
 class IAssociator {
 public:

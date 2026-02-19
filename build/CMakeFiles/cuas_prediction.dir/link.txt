@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcuas_prediction.a CMakeFiles/cuas_prediction.dir/src/prediction/cv_model.cpp.o CMakeFiles/cuas_prediction.dir/src/prediction/ca_model.cpp.o CMakeFiles/cuas_prediction.dir/src/prediction/ctr_model.cpp.o CMakeFiles/cuas_prediction.dir/src/prediction/imm_filter.cpp.o
+/usr/bin/ranlib libcuas_prediction.a

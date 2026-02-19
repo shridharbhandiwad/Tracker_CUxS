@@ -1,0 +1,1 @@
+/usr/bin/g++ -O3 -DNDEBUG CMakeFiles/cuas_tracker.dir/src/main.cpp.o -o cuas_tracker  libcuas_pipeline.a libcuas_receiver.a libcuas_track_management.a libcuas_preprocessing.a libcuas_clustering.a libcuas_association.a libcuas_prediction.a libcuas_sender.a libcuas_common.a -lpthread 

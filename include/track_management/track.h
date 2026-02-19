@@ -55,8 +55,8 @@ private:
     uint32_t consecutiveMisses_ = 0;
     uint32_t age_               = 0;
     double   quality_           = 0.5;
-    Timestamp lastUpdateTime_   = 0;
     Timestamp initiationTime_   = 0;
+    Timestamp lastUpdateTime_   = 0;
 };
 
 } // namespace cuas
