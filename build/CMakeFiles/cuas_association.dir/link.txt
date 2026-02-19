@@ -1,2 +1,0 @@
-/usr/bin/ar qc libcuas_association.a CMakeFiles/cuas_association.dir/src/association/association_engine.cpp.o CMakeFiles/cuas_association.dir/src/association/mahalanobis_associator.cpp.o CMakeFiles/cuas_association.dir/src/association/gnn_associator.cpp.o CMakeFiles/cuas_association.dir/src/association/jpda_associator.cpp.o
-/usr/bin/ranlib libcuas_association.a

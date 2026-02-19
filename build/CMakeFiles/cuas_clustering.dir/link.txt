@@ -1,2 +1,0 @@
-/usr/bin/ar qc libcuas_clustering.a CMakeFiles/cuas_clustering.dir/src/clustering/cluster_engine.cpp.o CMakeFiles/cuas_clustering.dir/src/clustering/dbscan_clusterer.cpp.o CMakeFiles/cuas_clustering.dir/src/clustering/range_clusterer.cpp.o CMakeFiles/cuas_clustering.dir/src/clustering/range_strength_clusterer.cpp.o
-/usr/bin/ranlib libcuas_clustering.a

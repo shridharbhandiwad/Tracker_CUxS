@@ -1,1 +1,0 @@
-/usr/bin/g++ -O3 -DNDEBUG CMakeFiles/dsp_injector.dir/simulators/dsp_injector/dsp_injector.cpp.o -o dsp_injector  libcuas_common.a -lpthread 

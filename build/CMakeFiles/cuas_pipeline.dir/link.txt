@@ -1,2 +1,0 @@
-/usr/bin/ar qc libcuas_pipeline.a CMakeFiles/cuas_pipeline.dir/src/pipeline/tracker_pipeline.cpp.o
-/usr/bin/ranlib libcuas_pipeline.a
