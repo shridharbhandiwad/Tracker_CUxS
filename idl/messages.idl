@@ -1,0 +1,117 @@
+/*
+ * Counter-UAS Radar Tracker - Interface Definition Language
+ * Defines all message structures exchanged over UDP between subsystems.
+ *
+ * Protocol: Custom binary serialization over UDP
+ * Byte order: Little-endian
+ */
+
+module CounterUAS {
+
+    /* ================================================================
+     * DSP -> Tracker: Signal Processing Detection Message
+     * Sent every 100ms per dwell
+     * ================================================================ */
+    const unsigned long MSG_ID_SP_DETECTION = 0x0001;
+
+    struct DetectionData {
+        double range;           // meters
+        double azimuth;         // radians
+        double elevation;       // radians
+        double strength;        // dBm
+        double noise;           // dBm
+        double snr;             // dB
+        double rcs;             // dBsm
+        double microDoppler;    // Hz
+    };
+
+    struct SPDetectionMessage {
+        unsigned long   messageId;      // MSG_ID_SP_DETECTION
+        unsigned long   dwellCount;     // monotonic dwell counter
+        unsigned long long timestamp;   // microseconds since epoch
+        unsigned long   numDetections;  // number of detections in this dwell
+        sequence<DetectionData> detections; // variable-length array
+    };
+
+    /* ================================================================
+     * Tracker -> Display: Track Update Message
+     * Sent for each active track after processing cycle
+     * ================================================================ */
+    const unsigned long MSG_ID_TRACK_UPDATE = 0x0002;
+
+    enum TrackStatus {
+        TRACK_TENTATIVE,
+        TRACK_CONFIRMED,
+        TRACK_COASTING,
+        TRACK_DELETED
+    };
+
+    enum TrackClassification {
+        CLASS_UNKNOWN,
+        CLASS_DRONE_ROTARY,
+        CLASS_DRONE_FIXED_WING,
+        CLASS_BIRD,
+        CLASS_CLUTTER
+    };
+
+    struct TrackUpdateMessage {
+        unsigned long           messageId;      // MSG_ID_TRACK_UPDATE
+        unsigned long           trackId;        // unique track identifier
+        unsigned long long      timestamp;      // microseconds since epoch
+        TrackStatus             status;
+        TrackClassification     classification;
+        double                  range;          // meters
+        double                  azimuth;        // radians
+        double                  elevation;      // radians
+        double                  rangeRate;      // m/s
+        double                  x;              // meters (Cartesian)
+        double                  y;              // meters (Cartesian)
+        double                  z;              // meters (Cartesian)
+        double                  vx;             // m/s
+        double                  vy;             // m/s
+        double                  vz;             // m/s
+        double                  trackQuality;   // 0.0 - 1.0
+        unsigned long           hitCount;
+        unsigned long           missCount;
+        unsigned long           age;            // number of dwells since init
+    };
+
+    /* ================================================================
+     * Tracker -> Display: Track Table Summary
+     * Periodic summary of all active tracks
+     * ================================================================ */
+    const unsigned long MSG_ID_TRACK_TABLE = 0x0003;
+
+    struct TrackTableMessage {
+        unsigned long   messageId;      // MSG_ID_TRACK_TABLE
+        unsigned long long timestamp;
+        unsigned long   numTracks;
+        sequence<TrackUpdateMessage> tracks;
+    };
+
+    /* ================================================================
+     * Log Record Header
+     * Prefixed to every binary log entry
+     * ================================================================ */
+    const unsigned long LOG_MAGIC = 0xCAFEBABE;
+
+    enum LogRecordType {
+        LOG_RAW_DETECTION,
+        LOG_PREPROCESSED,
+        LOG_CLUSTERED,
+        LOG_PREDICTED,
+        LOG_ASSOCIATED,
+        LOG_TRACK_INITIATED,
+        LOG_TRACK_UPDATED,
+        LOG_TRACK_DELETED,
+        LOG_TRACK_SENT
+    };
+
+    struct LogRecordHeader {
+        unsigned long       magic;          // LOG_MAGIC
+        unsigned long       recordType;     // LogRecordType
+        unsigned long long  timestamp;      // microseconds since epoch
+        unsigned long       payloadSize;    // bytes following this header
+    };
+
+};
