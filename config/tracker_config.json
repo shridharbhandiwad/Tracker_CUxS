@@ -1,0 +1,130 @@
+{
+    "system": {
+        "cyclePeriodMs": 100,
+        "maxDetectionsPerDwell": 256,
+        "maxTracks": 200,
+        "logDirectory": "./logs",
+        "logEnabled": true,
+        "logLevel": 3
+    },
+    "network": {
+        "receiverIp": "0.0.0.0",
+        "receiverPort": 50000,
+        "senderIp": "127.0.0.1",
+        "senderPort": 50001,
+        "receiveBufferSize": 65536,
+        "sendBufferSize": 65536
+    },
+    "preprocessing": {
+        "minRange": 50.0,
+        "maxRange": 20000.0,
+        "minAzimuth": -3.14159265,
+        "maxAzimuth": 3.14159265,
+        "minElevation": -0.1745,
+        "maxElevation": 1.5708,
+        "minSNR": 8.0,
+        "maxSNR": 60.0,
+        "minRCS": -30.0,
+        "maxRCS": 20.0,
+        "minStrength": -100.0,
+        "maxStrength": 0.0
+    },
+    "clustering": {
+        "method": "dbscan",
+        "dbscan": {
+            "epsilonRange": 50.0,
+            "epsilonAzimuth": 0.02,
+            "epsilonElevation": 0.02,
+            "minPoints": 2
+        },
+        "rangeBased": {
+            "rangeGateSize": 75.0,
+            "azimuthGateSize": 0.03,
+            "elevationGateSize": 0.03
+        },
+        "rangeStrength": {
+            "rangeGateSize": 75.0,
+            "azimuthGateSize": 0.03,
+            "elevationGateSize": 0.03,
+            "strengthGateSize": 6.0
+        }
+    },
+    "prediction": {
+        "imm": {
+            "numModels": 5,
+            "initialModeProbabilities": [0.4, 0.15, 0.15, 0.15, 0.15],
+            "transitionMatrix": [
+                [0.80, 0.05, 0.05, 0.05, 0.05],
+                [0.10, 0.70, 0.05, 0.10, 0.05],
+                [0.10, 0.05, 0.70, 0.05, 0.10],
+                [0.10, 0.10, 0.05, 0.70, 0.05],
+                [0.10, 0.05, 0.10, 0.05, 0.70]
+            ]
+        },
+        "cv": {
+            "processNoiseStd": 1.0
+        },
+        "ca1": {
+            "processNoiseStd": 2.0,
+            "accelDecayRate": 0.95
+        },
+        "ca2": {
+            "processNoiseStd": 5.0,
+            "accelDecayRate": 0.90
+        },
+        "ctr1": {
+            "processNoiseStd": 1.5,
+            "turnRateNoiseStd": 0.05
+        },
+        "ctr2": {
+            "processNoiseStd": 3.0,
+            "turnRateNoiseStd": 0.10
+        }
+    },
+    "association": {
+        "method": "gnn",
+        "gatingThreshold": 16.0,
+        "mahalanobis": {
+            "distanceThreshold": 9.21
+        },
+        "gnn": {
+            "costThreshold": 16.0
+        },
+        "jpda": {
+            "gateSize": 16.0,
+            "clutterDensity": 1e-6,
+            "detectionProbability": 0.9
+        }
+    },
+    "trackManagement": {
+        "initiation": {
+            "method": "mOfN",
+            "m": 3,
+            "n": 5,
+            "maxInitiationRange": 15000.0,
+            "velocityGate": 100.0
+        },
+        "maintenance": {
+            "confirmHits": 5,
+            "coastingLimit": 10,
+            "deleteAfterMisses": 15,
+            "qualityDecayRate": 0.95,
+            "qualityBoost": 0.1,
+            "minQualityThreshold": 0.1
+        },
+        "deletion": {
+            "maxCoastingDwells": 15,
+            "minQuality": 0.05,
+            "maxRange": 25000.0
+        },
+        "initialCovariance": {
+            "positionStd": 50.0,
+            "velocityStd": 20.0,
+            "accelerationStd": 5.0
+        }
+    },
+    "display": {
+        "updateRateMs": 200,
+        "sendDeletedTracks": true
+    }
+}
