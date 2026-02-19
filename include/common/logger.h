@@ -43,7 +43,14 @@ private:
 
 class ConsoleLogger {
 public:
+#ifdef _WIN32
+    #pragma push_macro("ERROR")
+    #undef ERROR
+#endif
     enum Level { ERROR = 0, WARN = 1, INFO = 2, DEBUG = 3, TRACE = 4 };
+#ifdef _WIN32
+    #pragma pop_macro("ERROR")
+#endif
 
     static ConsoleLogger& instance();
 
