@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace cuas {
 
 static constexpr double PI = 3.14159265358979323846;
