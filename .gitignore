@@ -17,3 +17,12 @@ Makefile
 .vs/
 .vscode/
 *.user
+
+# Qt / qmake
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+*.pro.user*
+debug/
+release/
+GeneratedFiles/
