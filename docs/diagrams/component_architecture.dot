@@ -1,0 +1,78 @@
+digraph components {
+  graph [
+    rankdir=TB,
+    bgcolor="white",
+    fontname="Helvetica",
+    fontsize=18,
+    labelloc="t",
+    label="Counter-UAS Radar Tracker — Component / Module Architecture (from CMake targets)"
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    fillcolor="#F8FAFC",
+    color="#334155",
+    fontname="Helvetica",
+    fontsize=12
+  ];
+  edge [color="#475569", fontname="Helvetica", fontsize=11, arrowsize=0.8];
+
+  subgraph cluster_exec {
+    label="Executables";
+    color="#CBD5E1";
+    style="rounded";
+
+    cuas_tracker [label="cuas_tracker\n(src/main.cpp)"];
+    dsp_injector [label="dsp_injector\n(simulators/dsp_injector)"];
+    display_module [label="display_module\n(simulators/display_module)"];
+    log_extractor [label="log_extractor\n(simulators/log_extractor)"];
+  }
+
+  subgraph cluster_libs {
+    label="Libraries (static)";
+    color="#CBD5E1";
+    style="rounded";
+
+    cuas_common [label="cuas_common\nconfig + logger + udp_socket"];
+    cuas_receiver [label="cuas_receiver\ndetection_receiver"];
+    cuas_preprocessing [label="cuas_preprocessing\npreprocessor"];
+    cuas_clustering [label="cuas_clustering\ncluster_engine + DBSCAN/range"];
+    cuas_prediction [label="cuas_prediction\nIMM + motion models"];
+    cuas_association [label="cuas_association\nMahalanobis / GNN / JPDA"];
+    cuas_track_mgmt [label="cuas_track_management\nTrack + Initiator + Manager"];
+    cuas_sender [label="cuas_sender\ntrack_sender"];
+    cuas_pipeline [label="cuas_pipeline\ntracker_pipeline"];
+  }
+
+  // Executable -> library linkage
+  cuas_tracker -> cuas_pipeline [penwidth=2];
+  dsp_injector -> cuas_common;
+  display_module -> cuas_common;
+  log_extractor -> cuas_common;
+
+  // Pipeline composition
+  cuas_pipeline -> cuas_common;
+  cuas_pipeline -> cuas_receiver;
+  cuas_pipeline -> cuas_track_mgmt;
+  cuas_pipeline -> cuas_sender;
+
+  // Receiver/sender depend on common
+  cuas_receiver -> cuas_common;
+  cuas_sender   -> cuas_common;
+  cuas_preprocessing -> cuas_common;
+  cuas_clustering -> cuas_common;
+  cuas_prediction -> cuas_common;
+
+  // Track management pulls algorithmic layers
+  cuas_track_mgmt -> cuas_common;
+  cuas_track_mgmt -> cuas_preprocessing;
+  cuas_track_mgmt -> cuas_clustering;
+  cuas_track_mgmt -> cuas_prediction;
+  cuas_track_mgmt -> cuas_association;
+
+  // Association uses prediction (measurement model + covariance)
+  cuas_association -> cuas_common;
+  cuas_association -> cuas_prediction;
+}
+

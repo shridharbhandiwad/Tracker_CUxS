@@ -1,0 +1,64 @@
+digraph deployment {
+  graph [
+    rankdir=LR,
+    bgcolor="white",
+    fontname="Helvetica",
+    fontsize=18,
+    labelloc="t",
+    label="Counter-UAS Radar Tracker — Deployment / System Context"
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    fillcolor="#F8FAFC",
+    color="#334155",
+    fontname="Helvetica",
+    fontsize=12
+  ];
+  edge [color="#475569", fontname="Helvetica", fontsize=11];
+
+  subgraph cluster_inputs {
+    label="Upstream (Radar / DSP)";
+    color="#CBD5E1";
+    style="rounded";
+
+    dsp [label="DSP / Radar Signal Processor\nProduces: SPDetectionMessage\n(100ms dwell)", fillcolor="#EEF2FF"];
+    injector [label="Simulator: dsp_injector\n(Replays / injects detections)", fillcolor="#EEF2FF"];
+  }
+
+  subgraph cluster_tracker {
+    label="Tracking Subsystem";
+    color="#CBD5E1";
+    style="rounded";
+
+    tracker [label="Executable: cuas_tracker\n- DetectionReceiver (UDP)\n- TrackerPipeline\n- TrackManager (IMM + assoc)\n- TrackSender (UDP)", fillcolor="#ECFEFF"];
+    config [label="Config: config/tracker_config.json\nControls thresholds + methods", fillcolor="#F1F5F9"];
+    logs [label="Binary logs: ./logs/\nRaw/Preproc/Cluster/Assoc/Tracks", fillcolor="#F1F5F9"];
+  }
+
+  subgraph cluster_outputs {
+    label="Downstream (Display / Consumers)";
+    color="#CBD5E1";
+    style="rounded";
+
+    display [label="Simulator: display_module\nor Qt Display Module\nConsumes: TrackTableMessage", fillcolor="#FEF3C7"];
+    operator [label="Operator / C2 UI\nVisualizes tracks + alerts", fillcolor="#FEF9C3"];
+  }
+
+  idl [label="IDL: idl/messages.idl\nMessage IDs + wire structs", shape=note, fillcolor="#F8FAFC"];
+
+  injector -> tracker [label="UDP (MSG_ID_SP_DETECTION)", penwidth=2];
+  dsp -> tracker      [label="UDP (MSG_ID_SP_DETECTION)", style=dashed];
+
+  tracker -> display  [label="UDP (MSG_ID_TRACK_TABLE)", penwidth=2];
+  display -> operator [label="UI update / visualization", style=dashed];
+
+  config -> tracker [label="loaded on startup"];
+  tracker -> logs [label="optional (logEnabled=true)"];
+
+  idl -> dsp [style=dotted];
+  idl -> tracker [style=dotted];
+  idl -> display [style=dotted];
+}
+

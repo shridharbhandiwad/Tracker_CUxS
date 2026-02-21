@@ -1,0 +1,67 @@
+digraph dwell_sequence {
+  graph [
+    rankdir=TB,
+    bgcolor="white",
+    fontname="Helvetica",
+    fontsize=18,
+    labelloc="t",
+    label="Runtime Sequence (simplified) — From UDP Detection to Track Update UDP"
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    fillcolor="#F8FAFC",
+    color="#334155",
+    fontname="Helvetica",
+    fontsize=11
+  ];
+  edge [color="#475569", fontname="Helvetica", fontsize=10, arrowsize=0.7];
+
+  // Swimlanes (as clusters)
+  subgraph cluster_up {
+    label="Upstream";
+    color="#CBD5E1";
+    style="rounded";
+    dsp [label="DSP / injector"];
+  }
+
+  subgraph cluster_recv {
+    label="Receiver thread";
+    color="#CBD5E1";
+    style="rounded";
+    rx1 [label="recvfrom() UDP"];
+    rx2 [label="MessageSerializer::deserialize()"];
+    rx3 [label="callback(msg)"];
+  }
+
+  subgraph cluster_pipe {
+    label="Pipeline / processing thread";
+    color="#CBD5E1";
+    style="rounded";
+    q1 [label="enqueue msg\n(queue + CV notify)"];
+    p1 [label="processingLoop waits\ncyclePeriodMs / msg"];
+    p2 [label="TrackManager::processDwell(msg)"];
+    p3 [label="TrackManager::getTrackUpdates()"];
+  }
+
+  subgraph cluster_send {
+    label="Sender thread (same as processing thread)";
+    color="#CBD5E1";
+    style="rounded";
+    s1 [label="TrackSender::sendTrackUpdates()"];
+    s2 [label="serializeTrackTable(tracks, ts)"];
+    s3 [label="UDP sendto()"];
+  }
+
+  subgraph cluster_down {
+    label="Downstream";
+    color="#CBD5E1";
+    style="rounded";
+    disp [label="Display consumer"];
+  }
+
+  dsp -> rx1 [label="UDP SPDetectionMessage"];
+  rx1 -> rx2 -> rx3 -> q1 -> p1 -> p2 -> p3 -> s1 -> s2 -> s3 -> disp [label="UDP TrackTableMessage"];
+}
+

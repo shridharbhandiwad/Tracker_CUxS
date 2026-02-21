@@ -1,0 +1,33 @@
+digraph track_state {
+  graph [
+    rankdir=LR,
+    bgcolor="white",
+    fontname="Helvetica",
+    fontsize=18,
+    labelloc="t",
+    label="Track Lifecycle State Machine (TrackStatus)"
+  ];
+  node [
+    shape=ellipse,
+    style="filled",
+    fillcolor="#F8FAFC",
+    color="#334155",
+    fontname="Helvetica",
+    fontsize=12
+  ];
+  edge [color="#475569", fontname="Helvetica", fontsize=11, arrowsize=0.8];
+
+  tentative [label="Tentative"];
+  confirmed [label="Confirmed", fillcolor="#DCFCE7"];
+  coasting  [label="Coasting", fillcolor="#FEF3C7"];
+  deleted   [label="Deleted", fillcolor="#FEE2E2"];
+
+  tentative -> confirmed [label="hitCount >= confirmHits"];
+  confirmed -> coasting  [label="miss detected"];
+  coasting  -> confirmed [label="hit (misses reset)"];
+
+  tentative -> deleted [label="deletion rules\n(misses/quality/range)"];
+  confirmed -> deleted [label="deletion rules"];
+  coasting  -> deleted [label="maxCoastingDwells\nor low_quality\nor out_of_range"];
+}
+
