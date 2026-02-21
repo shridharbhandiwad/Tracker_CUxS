@@ -1,0 +1,46 @@
+digraph dataflow {
+  graph [
+    rankdir=LR,
+    bgcolor="white",
+    fontname="Helvetica",
+    fontsize=18,
+    labelloc="t",
+    label="Per-dwell Tracking Data Flow (SPDetectionMessage → TrackTableMessage)"
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    fillcolor="#F8FAFC",
+    color="#334155",
+    fontname="Helvetica",
+    fontsize=12
+  ];
+  edge [color="#475569", fontname="Helvetica", fontsize=11, arrowsize=0.8];
+
+  spmsg [label="SPDetectionMessage\n(dwellCount, timestamp,\nvector<Detection>)", fillcolor="#EEF2FF"];
+  recv [label="DetectionReceiver\nUDP deserialize + callback", fillcolor="#EEF2FF"];
+  queue [label="TrackerPipeline queue\n(condition_variable)", fillcolor="#E0F2FE"];
+
+  pre [label="Preprocessor\nrange/angle/SNR/RCS filters", fillcolor="#F1F5F9"];
+  clust [label="ClusterEngine\nDBSCAN / Range / Range+Strength\ncentroid + Cartesian conversion", fillcolor="#F1F5F9"];
+
+  predict [label="IMMFilter.predict(dt)\nCV/CA/CTR models", fillcolor="#ECFEFF"];
+  assoc [label="AssociationEngine\nMahalanobis / GNN / JPDA\n(gating + assignment)", fillcolor="#ECFEFF"];
+  update [label="IMMFilter.update(z)\nKalman update + mode probs", fillcolor="#ECFEFF"];
+  init [label="TrackInitiator\nM-of-N initiation for\nunmatched clusters", fillcolor="#ECFEFF"];
+  maintain [label="Track maintenance\nconfirm/coast/quality\n+ delete rules", fillcolor="#F1F5F9"];
+  classify [label="Track classification\n(speed + IMM mode probs", fillcolor="#F1F5F9"];
+
+  out [label="vector<TrackUpdateMessage>\n(one per active track)", fillcolor="#FEF3C7"];
+  send [label="TrackSender\nUDP serializeTrackTable()", fillcolor="#FEF3C7"];
+  disp [label="Display consumer\n(Qt/simulator)", fillcolor="#FEF9C3"];
+
+  spmsg -> recv -> queue -> pre -> clust -> predict -> assoc;
+  assoc -> update [label="matched tracks"];
+  assoc -> init [label="unmatched clusters"];
+  update -> maintain;
+  init -> maintain;
+  maintain -> classify -> out -> send -> disp;
+}
+

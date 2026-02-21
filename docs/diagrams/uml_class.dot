@@ -1,0 +1,79 @@
+digraph uml {
+  graph [
+    rankdir=LR,
+    bgcolor="white",
+    fontname="Helvetica",
+    fontsize=18,
+    labelloc="t",
+    label="UML (high-level) — Core Classes and Strategy Interfaces"
+  ];
+
+  node [
+    shape=record,
+    style="rounded,filled",
+    fillcolor="#F8FAFC",
+    color="#334155",
+    fontname="Helvetica",
+    fontsize=11
+  ];
+  edge [color="#475569", fontname="Helvetica", fontsize=10, arrowsize=0.7];
+
+  TrackerPipeline [label="{TrackerPipeline|+ start():bool\\l+ stop():void\\l- processingLoop()\\l- onDetectionReceived(msg)\\l|owns: DetectionReceiver\\lowns: TrackManager\\lowns: TrackSender\\l}"];
+  DetectionReceiver [label="{DetectionReceiver|+ start(cb)\\l+ stop()\\l- receiveLoop()\\l|uses: UdpSocket\\luses: MessageSerializer\\l}"];
+  TrackSender [label="{TrackSender|+ init()\\l+ sendTrackUpdates(updates, ts)\\l+ close()\\l|uses: UdpSocket\\luses: MessageSerializer\\l}"];
+
+  TrackManager [label="{TrackManager|+ processDwell(msg)\\l+ getTrackUpdates()\\l|owns: Preprocessor\\lowns: ClusterEngine\\lowns: IMMFilter\\lowns: AssociationEngine\\lowns: TrackInitiator\\lowns: vector<Track>\\l}"];
+
+  Preprocessor [label="{Preprocessor|+ process(detections)\\l- isValid(d)\\l}"];
+  ClusterEngine [label="{ClusterEngine|+ process(dets):vector<Cluster>\\l|owns: IClusterer\\l}"];
+  IClusterer [label="{IClusterer (interface)|+ cluster(dets)\\l+ name()\\l}"];
+  DBSCAN [label="{DBScanClusterer|+ cluster()\\l}"];
+  Range [label="{RangeClusterer|+ cluster()\\l}"];
+  RangeStrength [label="{RangeStrengthClusterer|+ cluster()\\l}"];
+
+  AssociationEngine [label="{AssociationEngine|+ process(tracks, clusters, imm, R)\\l|owns: IAssociator\\l}"];
+  IAssociator [label="{IAssociator (interface)|+ associate(tracks, clusters, imm, R)\\l+ name()\\l}"];
+  Mahalanobis [label="{MahalanobisAssociator|+ associate()\\l}"];
+  GNN [label="{GNNAssociator|+ associate()\\l- hungarianAssignment()\\l}"];
+  JPDA [label="{JPDAAssociator|+ associate()\\l- computeWeights()\\l}"];
+
+  IMMFilter [label="{IMMFilter|+ predict(dt, state)\\l+ update(state, z, R)\\l+ getMeasurementMatrix()\\l|owns: IMotionModel[5]\\l}"];
+  IMotionModel [label="{IMotionModel (interface)|+ predict(x,P,dt): (xNext,PNext)\\l}"];
+  CV [label="{CVModel|+ predict()\\l}"];
+  CA [label="{CAModel|+ predict()\\l}"];
+  CTR [label="{CTRModel|+ predict()\\l}"];
+
+  TrackInitiator [label="{TrackInitiator|+ processCandidates(unmatched)\\l+ purgeStaleCandidates()\\l|creates: Track\\l}"];
+  Track [label="{Track|+ id()\\l+ immState()\\l+ toUpdateMessage()\\l+ recordHit()/recordMiss()\\l|has: IMMState\\lstatus/classification/quality\\l}"];
+
+  // Ownership / usage
+  TrackerPipeline -> DetectionReceiver [label="owns"];
+  TrackerPipeline -> TrackManager [label="owns"];
+  TrackerPipeline -> TrackSender [label="owns"];
+
+  DetectionReceiver -> TrackManager [style=dotted, label="callback enqueues msg"];
+  TrackSender -> TrackManager [style=dotted, label="logs 'track sent'"];
+
+  TrackManager -> Preprocessor [label="owns"];
+  TrackManager -> ClusterEngine [label="owns"];
+  TrackManager -> IMMFilter [label="owns"];
+  TrackManager -> AssociationEngine [label="owns"];
+  TrackManager -> TrackInitiator [label="owns"];
+  TrackManager -> Track [label="owns many"];
+
+  ClusterEngine -> IClusterer [label="strategy"];
+  IClusterer -> DBSCAN [arrowhead="empty"];
+  IClusterer -> Range [arrowhead="empty"];
+  IClusterer -> RangeStrength [arrowhead="empty"];
+
+  AssociationEngine -> IAssociator [label="strategy"];
+  IAssociator -> Mahalanobis [arrowhead="empty"];
+  IAssociator -> GNN [arrowhead="empty"];
+  IAssociator -> JPDA [arrowhead="empty"];
+
+  IMMFilter -> IMotionModel [label="strategy"];
+  IMotionModel -> CV [arrowhead="empty"];
+  IMotionModel -> CA [arrowhead="empty"];
+  IMotionModel -> CTR [arrowhead="empty"];
+}
+
