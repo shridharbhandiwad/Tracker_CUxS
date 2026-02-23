@@ -389,7 +389,10 @@ int datMode(const std::string& filename, const std::string& outDir) {
     fSent    << "timestamp\ttrack_id\tstatus\tclassification\trange\tazimuth_deg\televation_deg"
              << "\trange_rate\tx\ty\tz\tvx\tvy\tvz\tquality\thits\tmisses\tage\n";
 
-    fCombined << "step\tdwell\ttimestamp\tpayload\n";
+    // Combined track flow: one header with named columns; each row has same columns (empty where N/A)
+    fCombined << "step\tdwell\ttimestamp_us\tnum_detections\tdet_idx\trange_m\tazimuth_deg\televation_deg\trange_rate"
+              << "\tstrength\tnoise\tsnr\trcs\tmicroDoppler\tcluster_id\tassoc_distance\ttrack_id\tstatus\tclassification"
+              << "\tx_m\ty_m\tz_m\tvx\tvy\tvz\tax\tay\taz\tquality\thits\tmisses\tage\n";
 
     cuas::LogRecordHeader hdr;
     uint64_t records = 0;
@@ -424,9 +427,9 @@ int datMode(const std::string& filename, const std::string& outDir) {
                     fCombined << std::fixed << std::setprecision(4)
                               << "raw\t" << currentDwell << "\t" << hdr.timestamp << "\t"
                               << numDets << "\t" << i << "\t" << d.range << "\t" << d.azimuth * cuas::RAD2DEG
-                              << "\t" << d.elevation * cuas::RAD2DEG
-                              << "\t" << d.strength << "\t" << d.noise
-                              << "\t" << d.snr << "\t" << d.rcs << "\t" << d.microDoppler << "\n";
+                              << "\t" << d.elevation * cuas::RAD2DEG << "\t\t"
+                              << d.strength << "\t" << d.noise << "\t" << d.snr << "\t" << d.rcs << "\t" << d.microDoppler
+                              << "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n";
                 }
                 break;
             }
@@ -445,9 +448,9 @@ int datMode(const std::string& filename, const std::string& outDir) {
                     fCombined << std::fixed << std::setprecision(4)
                               << "preprocessed\t" << currentDwell << "\t" << hdr.timestamp << "\t"
                               << n << "\t" << i << "\t" << d.range << "\t" << d.azimuth * cuas::RAD2DEG
-                              << "\t" << d.elevation * cuas::RAD2DEG
-                              << "\t" << d.strength << "\t" << d.noise
-                              << "\t" << d.snr << "\t" << d.rcs << "\t" << d.microDoppler << "\n";
+                              << "\t" << d.elevation * cuas::RAD2DEG << "\t\t"
+                              << d.strength << "\t" << d.noise << "\t" << d.snr << "\t" << d.rcs << "\t" << d.microDoppler
+                              << "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n";
                 }
                 break;
             }
@@ -481,10 +484,10 @@ int datMode(const std::string& filename, const std::string& outDir) {
                              << "\t" << cx << "\t" << cy << "\t" << cz << "\n";
                     fCombined << std::fixed << std::setprecision(4)
                               << "clustering\t" << currentDwell << "\t" << hdr.timestamp << "\t"
-                              << cid << "\t" << nd << "\t" << r << "\t" << az * cuas::RAD2DEG
-                              << "\t" << el * cuas::RAD2DEG
-                              << "\t" << str << "\t" << snr << "\t" << rcs << "\t" << ud
-                              << "\t" << cx << "\t" << cy << "\t" << cz << "\n";
+                              << nd << "\t\t" << r << "\t" << az * cuas::RAD2DEG << "\t" << el * cuas::RAD2DEG << "\t\t"
+                              << str << "\t\t" << snr << "\t" << rcs << "\t" << ud << "\t"
+                              << cid << "\t\t\t\t\t\t"
+                              << cx << "\t" << cy << "\t" << cz << "\t\t\t\t\t\t\t\t\t\t\t\n";
                 }
                 break;
             }
@@ -500,9 +503,11 @@ int datMode(const std::string& filename, const std::string& outDir) {
                       << "\t" << sv[6] << "\t" << sv[7] << "\t" << sv[8] << "\n";
                 fCombined << std::fixed << std::setprecision(4)
                           << "prediction\t" << currentDwell << "\t" << hdr.timestamp << "\t"
-                          << tid << "\t" << sv[0] << "\t" << sv[1] << "\t" << sv[2]
-                          << "\t" << sv[3] << "\t" << sv[4] << "\t" << sv[5]
-                          << "\t" << sv[6] << "\t" << sv[7] << "\t" << sv[8] << "\n";
+                          << "\t\t\t\t\t\t\t\t\t\t\t\t\t"
+                          << tid << "\t\t\t\t"
+                          << sv[0] << "\t" << sv[3] << "\t" << sv[6] << "\t"
+                          << sv[1] << "\t" << sv[4] << "\t" << sv[7] << "\t"
+                          << sv[2] << "\t" << sv[5] << "\t" << sv[8] << "\t\t\t\t\t\n";
                 break;
             }
             case cuas::LogRecordType::Associated: {
@@ -515,7 +520,8 @@ int datMode(const std::string& filename, const std::string& outDir) {
                        << hdr.timestamp << "\t" << tid << "\t" << cid << "\t" << dist << "\n";
                 fCombined << std::fixed << std::setprecision(4)
                           << "association\t" << currentDwell << "\t" << hdr.timestamp << "\t"
-                          << tid << "\t" << cid << "\t" << dist << "\n";
+                          << "\t\t\t\t\t\t\t\t\t\t\t"
+                          << cid << "\t" << dist << "\t" << tid << "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n";
                 break;
             }
             case cuas::LogRecordType::TrackInitiated: {
@@ -530,9 +536,11 @@ int datMode(const std::string& filename, const std::string& outDir) {
                       << "\t" << sv[6] << "\t" << sv[7] << "\t" << sv[8] << "\n";
                 fCombined << std::fixed << std::setprecision(4)
                           << "track_init\t" << currentDwell << "\t" << hdr.timestamp << "\t"
-                          << tid << "\t" << sv[0] << "\t" << sv[1] << "\t" << sv[2]
-                          << "\t" << sv[3] << "\t" << sv[4] << "\t" << sv[5]
-                          << "\t" << sv[6] << "\t" << sv[7] << "\t" << sv[8] << "\n";
+                          << "\t\t\t\t\t\t\t\t\t\t\t\t\t"
+                          << tid << "\t\t\t\t"
+                          << sv[0] << "\t" << sv[3] << "\t" << sv[6] << "\t"
+                          << sv[1] << "\t" << sv[4] << "\t" << sv[7] << "\t"
+                          << sv[2] << "\t" << sv[5] << "\t" << sv[8] << "\t\t\t\t\t\n";
                 break;
             }
             case cuas::LogRecordType::TrackUpdated: {
@@ -548,17 +556,19 @@ int datMode(const std::string& filename, const std::string& outDir) {
                      << "\t" << sv[6] << "\t" << sv[7] << "\t" << sv[8] << "\n";
                 fCombined << std::fixed << std::setprecision(4)
                           << "update\t" << currentDwell << "\t" << hdr.timestamp << "\t"
-                          << tid << "\t" << status
-                          << "\t" << sv[0] << "\t" << sv[1] << "\t" << sv[2]
-                          << "\t" << sv[3] << "\t" << sv[4] << "\t" << sv[5]
-                          << "\t" << sv[6] << "\t" << sv[7] << "\t" << sv[8] << "\n";
+                          << "\t\t\t\t\t\t\t\t\t\t\t\t\t"
+                          << tid << "\t" << status << "\t\t"
+                          << sv[0] << "\t" << sv[3] << "\t" << sv[6] << "\t"
+                          << sv[1] << "\t" << sv[4] << "\t" << sv[7] << "\t"
+                          << sv[2] << "\t" << sv[5] << "\t" << sv[8] << "\t\t\t\t\t\n";
                 break;
             }
             case cuas::LogRecordType::TrackDeleted: {
                 if (payload.size() < 4) break;
                 uint32_t tid; std::memcpy(&tid, p, 4);
                 fDel << hdr.timestamp << "\t" << tid << "\n";
-                fCombined << "track_delete\t" << currentDwell << "\t" << hdr.timestamp << "\t" << tid << "\n";
+                fCombined << "track_delete\t" << currentDwell << "\t" << hdr.timestamp << "\t"
+                          << "\t\t\t\t\t\t\t\t\t\t\t\t\t" << tid << "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n";
                 break;
             }
             case cuas::LogRecordType::TrackSent: {
@@ -579,16 +589,13 @@ int datMode(const std::string& filename, const std::string& outDir) {
                       << "\t" << msg.hitCount << "\t" << msg.missCount << "\t" << msg.age << "\n";
                 fCombined << std::fixed << std::setprecision(4)
                           << "sender\t" << currentDwell << "\t" << hdr.timestamp << "\t"
+                          << "\t\t" << msg.range << "\t" << msg.azimuth * cuas::RAD2DEG
+                          << "\t" << msg.elevation * cuas::RAD2DEG << "\t" << msg.rangeRate << "\t\t\t\t\t\t\t\t\t\t"
                           << msg.trackId << "\t" << static_cast<int>(msg.status)
-                          << "\t" << static_cast<int>(msg.classification)
-                          << "\t" << msg.range
-                          << "\t" << msg.azimuth * cuas::RAD2DEG
-                          << "\t" << msg.elevation * cuas::RAD2DEG
-                          << "\t" << msg.rangeRate
-                          << "\t" << msg.x << "\t" << msg.y << "\t" << msg.z
-                          << "\t" << msg.vx << "\t" << msg.vy << "\t" << msg.vz
-                          << "\t" << msg.trackQuality
-                          << "\t" << msg.hitCount << "\t" << msg.missCount << "\t" << msg.age << "\n";
+                          << "\t" << static_cast<int>(msg.classification) << "\t"
+                          << msg.x << "\t" << msg.y << "\t" << msg.z
+                          << "\t" << msg.vx << "\t" << msg.vy << "\t" << msg.vz << "\t\t\t\t\t"
+                          << msg.trackQuality << "\t" << msg.hitCount << "\t" << msg.missCount << "\t" << msg.age << "\n";
                 break;
             }
             default: break;
