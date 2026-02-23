@@ -27,6 +27,12 @@ public:
 
     BinaryLogger& logger() { return logger_; }
 
+    // Expose last pipeline stage data for the display/sender
+    const std::vector<ClusterWire>&        lastClusters()  const { return lastClusters_; }
+    const std::vector<AssocEntryWire>&     lastAssoc()     const { return lastAssoc_; }
+    const std::vector<PredictedEntryWire>& lastPredicted() const { return lastPredicted_; }
+    uint32_t                               lastDwellCount() const { return dwellCount_; }
+
 private:
     void predict(double dt);
     void associate(const std::vector<Cluster>& clusters);
@@ -53,6 +59,11 @@ private:
 
     Timestamp lastDwellTime_ = 0;
     uint32_t  dwellCount_    = 0;
+
+    // Cached intermediate pipeline stage data for forwarding to display
+    std::vector<ClusterWire>        lastClusters_;
+    std::vector<AssocEntryWire>     lastAssoc_;
+    std::vector<PredictedEntryWire> lastPredicted_;
 };
 
 } // namespace cuas

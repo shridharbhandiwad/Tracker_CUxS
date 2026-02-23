@@ -248,4 +248,138 @@ bool MessageSerializer::deserializeTrackTable(
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// ClusterTable serialization
+// ---------------------------------------------------------------------------
+
+std::vector<uint8_t> MessageSerializer::serializeClusterTable(
+    const std::vector<ClusterWire>& clusters, uint64_t timestamp, uint32_t dwellCount) {
+    uint32_t msgId    = MSG_ID_CLUSTER_TABLE;
+    uint32_t numItems = static_cast<uint32_t>(clusters.size());
+    size_t sz = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t) + sizeof(uint32_t)
+                + numItems * sizeof(ClusterWire);
+    std::vector<uint8_t> buf(sz);
+    uint8_t* p = buf.data();
+
+    std::memcpy(p, &msgId,      4); p += 4;
+    std::memcpy(p, &timestamp,  8); p += 8;
+    std::memcpy(p, &dwellCount, 4); p += 4;
+    std::memcpy(p, &numItems,   4); p += 4;
+    for (const auto& c : clusters) {
+        std::memcpy(p, &c, sizeof(ClusterWire));
+        p += sizeof(ClusterWire);
+    }
+    return buf;
+}
+
+bool MessageSerializer::deserializeClusterTable(
+    const uint8_t* data, int len,
+    std::vector<ClusterWire>& clusters, uint64_t& timestamp, uint32_t& dwellCount) {
+    if (len < 20) return false;
+    const uint8_t* p = data;
+    uint32_t msgId;
+    std::memcpy(&msgId, p, 4); p += 4;
+    if (msgId != MSG_ID_CLUSTER_TABLE) return false;
+    std::memcpy(&timestamp,  p, 8); p += 8;
+    std::memcpy(&dwellCount, p, 4); p += 4;
+    uint32_t numItems;
+    std::memcpy(&numItems, p, 4); p += 4;
+    int remaining = len - 20;
+    if (remaining < static_cast<int>(numItems * sizeof(ClusterWire))) return false;
+    clusters.resize(numItems);
+    for (uint32_t i = 0; i < numItems; ++i) {
+        std::memcpy(&clusters[i], p, sizeof(ClusterWire));
+        p += sizeof(ClusterWire);
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// AssocTable serialization
+// ---------------------------------------------------------------------------
+
+std::vector<uint8_t> MessageSerializer::serializeAssocTable(
+    const std::vector<AssocEntryWire>& entries, uint64_t timestamp) {
+    uint32_t msgId    = MSG_ID_ASSOC_TABLE;
+    uint32_t numItems = static_cast<uint32_t>(entries.size());
+    size_t sz = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t)
+                + numItems * sizeof(AssocEntryWire);
+    std::vector<uint8_t> buf(sz);
+    uint8_t* p = buf.data();
+
+    std::memcpy(p, &msgId,     4); p += 4;
+    std::memcpy(p, &timestamp, 8); p += 8;
+    std::memcpy(p, &numItems,  4); p += 4;
+    for (const auto& e : entries) {
+        std::memcpy(p, &e, sizeof(AssocEntryWire));
+        p += sizeof(AssocEntryWire);
+    }
+    return buf;
+}
+
+bool MessageSerializer::deserializeAssocTable(
+    const uint8_t* data, int len,
+    std::vector<AssocEntryWire>& entries, uint64_t& timestamp) {
+    if (len < 16) return false;
+    const uint8_t* p = data;
+    uint32_t msgId;
+    std::memcpy(&msgId, p, 4); p += 4;
+    if (msgId != MSG_ID_ASSOC_TABLE) return false;
+    std::memcpy(&timestamp, p, 8); p += 8;
+    uint32_t numItems;
+    std::memcpy(&numItems, p, 4); p += 4;
+    int remaining = len - 16;
+    if (remaining < static_cast<int>(numItems * sizeof(AssocEntryWire))) return false;
+    entries.resize(numItems);
+    for (uint32_t i = 0; i < numItems; ++i) {
+        std::memcpy(&entries[i], p, sizeof(AssocEntryWire));
+        p += sizeof(AssocEntryWire);
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// PredictedTable serialization
+// ---------------------------------------------------------------------------
+
+std::vector<uint8_t> MessageSerializer::serializePredictedTable(
+    const std::vector<PredictedEntryWire>& entries, uint64_t timestamp) {
+    uint32_t msgId    = MSG_ID_PREDICTED_TABLE;
+    uint32_t numItems = static_cast<uint32_t>(entries.size());
+    size_t sz = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t)
+                + numItems * sizeof(PredictedEntryWire);
+    std::vector<uint8_t> buf(sz);
+    uint8_t* p = buf.data();
+
+    std::memcpy(p, &msgId,     4); p += 4;
+    std::memcpy(p, &timestamp, 8); p += 8;
+    std::memcpy(p, &numItems,  4); p += 4;
+    for (const auto& e : entries) {
+        std::memcpy(p, &e, sizeof(PredictedEntryWire));
+        p += sizeof(PredictedEntryWire);
+    }
+    return buf;
+}
+
+bool MessageSerializer::deserializePredictedTable(
+    const uint8_t* data, int len,
+    std::vector<PredictedEntryWire>& entries, uint64_t& timestamp) {
+    if (len < 16) return false;
+    const uint8_t* p = data;
+    uint32_t msgId;
+    std::memcpy(&msgId, p, 4); p += 4;
+    if (msgId != MSG_ID_PREDICTED_TABLE) return false;
+    std::memcpy(&timestamp, p, 8); p += 8;
+    uint32_t numItems;
+    std::memcpy(&numItems, p, 4); p += 4;
+    int remaining = len - 16;
+    if (remaining < static_cast<int>(numItems * sizeof(PredictedEntryWire))) return false;
+    entries.resize(numItems);
+    for (uint32_t i = 0; i < numItems; ++i) {
+        std::memcpy(&entries[i], p, sizeof(PredictedEntryWire));
+        p += sizeof(PredictedEntryWire);
+    }
+    return true;
+}
+
 } // namespace cuas

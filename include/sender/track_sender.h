@@ -15,6 +15,10 @@ public:
 
     bool init();
     void sendTrackUpdates(const std::vector<TrackUpdateMessage>& updates, Timestamp ts);
+    void sendRawDetections(const SPDetectionMessage& msg);
+    void sendClusterTable(const std::vector<ClusterWire>& clusters, Timestamp ts, uint32_t dwellCount);
+    void sendAssocTable(const std::vector<AssocEntryWire>& entries, Timestamp ts);
+    void sendPredictedTable(const std::vector<PredictedEntryWire>& entries, Timestamp ts);
     void close();
 
     uint64_t totalMessagesSent() const { return msgCount_.load(); }

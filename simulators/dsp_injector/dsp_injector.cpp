@@ -202,7 +202,7 @@ private:
 int main(int argc, char* argv[]) {
     std::string trackerIp   = "127.0.0.1";
     int         trackerPort = 50000;
-    int         numTargets  = 5;
+    int         numTargets  = 1;
     int         durationSec = 60;
     int         rateMs      = 100;
 

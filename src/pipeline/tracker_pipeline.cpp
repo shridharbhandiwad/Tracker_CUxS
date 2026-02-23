@@ -77,12 +77,22 @@ void TrackerPipeline::processingLoop() {
 
         auto cycleStart = std::chrono::high_resolution_clock::now();
 
+        // Forward raw detections to the display before processing so the
+        // display can show both the incoming detections and the resulting tracks.
+        sender_->sendRawDetections(msg);
+
         // Process the dwell through the tracking pipeline
         trackManager_->processDwell(msg);
 
+        Timestamp ts = msg.timestamp > 0 ? msg.timestamp : nowMicros();
+
+        // Forward intermediate pipeline stage data to the display
+        sender_->sendClusterTable(trackManager_->lastClusters(), ts, trackManager_->lastDwellCount());
+        sender_->sendPredictedTable(trackManager_->lastPredicted(), ts);
+        sender_->sendAssocTable(trackManager_->lastAssoc(), ts);
+
         // Get track updates and send to display
         auto updates = trackManager_->getTrackUpdates();
-        Timestamp ts = msg.timestamp > 0 ? msg.timestamp : nowMicros();
 
         if (!updates.empty()) {
             sender_->sendTrackUpdates(updates, ts);

@@ -16,12 +16,11 @@ TrackManager::TrackManager(const TrackerConfig& cfg) : config_(cfg) {
         cfg.trackManagement.initialCovariance,
         cfg.prediction);
 
-    // Measurement noise (position uncertainty in Cartesian)
-    double sigR = 25.0;
-    double posNoise = sigR * sigR;
+    // Measurement noise is recomputed per-dwell in associate() based on the
+    // current maximum track range.  Initialise to a sensible diagonal default.
     for (int i = 0; i < MEAS_DIM; ++i)
         for (int j = 0; j < MEAS_DIM; ++j)
-            measurementNoise_[i][j] = (i == j) ? posNoise : 0.0;
+            measurementNoise_[i][j] = (i == j) ? 625.0 : 0.0;
 
     if (cfg.system.logEnabled) {
         logger_.open(cfg.system.logDirectory, "tracker");
@@ -51,6 +50,26 @@ void TrackManager::processDwell(const SPDetectionMessage& msg) {
     // 3. Cluster
     auto clusters = clusterEngine_->process(filtered);
     logger_.logClustered(ts, clusters);
+
+    // Cache cluster data for display forwarding
+    lastClusters_.clear();
+    lastClusters_.reserve(clusters.size());
+    for (const auto& c : clusters) {
+        ClusterWire cw{};
+        cw.clusterId     = c.clusterId;
+        cw.numDetections = c.numDetections;
+        cw.range         = c.range;
+        cw.azimuth       = c.azimuth;
+        cw.elevation     = c.elevation;
+        cw.strength      = c.strength;
+        cw.snr           = c.snr;
+        cw.rcs           = c.rcs;
+        cw.microDoppler  = c.microDoppler;
+        cw.x             = c.cartesian.x;
+        cw.y             = c.cartesian.y;
+        cw.z             = c.cartesian.z;
+        lastClusters_.push_back(cw);
+    }
 
     LOG_DEBUG("TrackManager", "After clustering: %zu clusters", clusters.size());
 
@@ -82,13 +101,32 @@ void TrackManager::processDwell(const SPDetectionMessage& msg) {
 }
 
 void TrackManager::predict(double dt) {
+    lastPredicted_.clear();
+
     for (auto& track : tracks_) {
         if (track->status() == TrackStatus::Deleted) continue;
 
         immFilter_->predict(dt, track->immState());
         track->incrementAge();
 
-        logger_.logPredicted(nowMicros(), track->id(), track->state());
+        Timestamp now = nowMicros();
+        logger_.logPredicted(now, track->id(), track->state());
+
+        // Cache predicted state for display forwarding
+        PredictedEntryWire pe{};
+        pe.trackId     = track->id();
+        pe.trackStatus = static_cast<uint32_t>(track->status());
+        const auto& s  = track->state();
+        pe.x = s[0]; pe.vx = s[1]; pe.ax = s[2];
+        pe.y = s[3]; pe.vy = s[4]; pe.ay = s[5];
+        pe.z = s[6]; pe.vz = s[7]; pe.az = s[8];
+        auto sph = track->sphericalPosition();
+        pe.range = sph.range; pe.azimuth = sph.azimuth; pe.elevation = sph.elevation;
+        const auto& P = track->covariance();
+        pe.covX = P[0][0]; pe.covY = P[3][3]; pe.covZ = P[6][6];
+        for (int m = 0; m < 5; ++m)
+            pe.modelProb[m] = track->immState().modeProbabilities[m];
+        lastPredicted_.push_back(pe);
 
         LOG_TRACE("TrackManager", "Predicted track %u: x=%.1f y=%.1f z=%.1f",
                   track->id(), track->state()[0], track->state()[3], track->state()[6]);
@@ -113,8 +151,53 @@ void TrackManager::associate(const std::vector<Cluster>& clusters) {
         trackRefs.push_back(*t);
     }
 
+    // Compute range-adaptive measurement noise R.
+    // DSP sensor: range σ = 10 m, angle σ = 0.005 rad.
+    // Cross-range noise at slant range R is  R * σ_angle  (small-angle approx).
+    // Using the worst-case (maximum) track range keeps the gate correct for
+    // all tracks simultaneously without per-track R bookkeeping.
+    {
+        static constexpr double SIGMA_RANGE = 10.0;   // metres
+        static constexpr double SIGMA_ANGLE = 0.005;  // radians
+        double maxRange = 5000.0;                     // conservative floor
+        for (const auto& t : trackRefs)
+            maxRange = std::max(maxRange, t.sphericalPosition().range);
+        double sigCross = SIGMA_ANGLE * maxRange;
+        measurementNoise_ = {};
+        measurementNoise_[0][0] = SIGMA_RANGE * SIGMA_RANGE; // range axis  ~ 100 m²
+        measurementNoise_[1][1] = sigCross * sigCross;        // cross-range (range-dep)
+        measurementNoise_[2][2] = sigCross * sigCross;        // elevation cross-range
+    }
+
     auto assocResult = associationEngine_->process(trackRefs, clusters,
                                                     *immFilter_, measurementNoise_);
+
+    // Cache association results for display forwarding
+    lastAssoc_.clear();
+    for (const auto& match : assocResult.matched) {
+        AssocEntryWire ae{};
+        ae.trackId   = activeTracks[match.trackIndex]->id();
+        ae.clusterId = clusters[match.clusterIndex].clusterId;
+        ae.distance  = match.distance;
+        ae.matched   = 1;
+        lastAssoc_.push_back(ae);
+    }
+    for (int unmIdx : assocResult.unmatchedTracks) {
+        AssocEntryWire ae{};
+        ae.trackId   = activeTracks[unmIdx]->id();
+        ae.clusterId = 0xFFFFFFFFu;
+        ae.distance  = -1.0;
+        ae.matched   = 0;
+        lastAssoc_.push_back(ae);
+    }
+    for (int cIdx : assocResult.unmatchedClusters) {
+        AssocEntryWire ae{};
+        ae.trackId   = 0xFFFFFFFFu;
+        ae.clusterId = clusters[cIdx].clusterId;
+        ae.distance  = -1.0;
+        ae.matched   = 0;
+        lastAssoc_.push_back(ae);
+    }
 
     // Update matched tracks
     for (const auto& match : assocResult.matched) {

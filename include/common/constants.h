@@ -8,9 +8,12 @@ static constexpr double PI = 3.14159265358979323846;
 static constexpr double DEG2RAD = PI / 180.0;
 static constexpr double RAD2DEG = 180.0 / PI;
 
-static constexpr uint32_t MSG_ID_SP_DETECTION = 0x0001;
-static constexpr uint32_t MSG_ID_TRACK_UPDATE = 0x0002;
-static constexpr uint32_t MSG_ID_TRACK_TABLE  = 0x0003;
+static constexpr uint32_t MSG_ID_SP_DETECTION    = 0x0001;
+static constexpr uint32_t MSG_ID_TRACK_UPDATE    = 0x0002;
+static constexpr uint32_t MSG_ID_TRACK_TABLE     = 0x0003;
+static constexpr uint32_t MSG_ID_CLUSTER_TABLE   = 0x0010;
+static constexpr uint32_t MSG_ID_ASSOC_TABLE     = 0x0011;
+static constexpr uint32_t MSG_ID_PREDICTED_TABLE = 0x0012;
 
 static constexpr int MAX_DETECTIONS_PER_DWELL = 256;
 static constexpr int MAX_TRACKS = 200;

@@ -158,6 +158,47 @@ struct TrackUpdateMessage {
 };
 
 // ---------------------------------------------------------------------------
+// Flat wire-safe structs for intermediate pipeline UDP messages
+// ---------------------------------------------------------------------------
+#pragma pack(push, 1)
+
+// One cluster entry (no variable-length fields)
+struct ClusterWire {
+    uint32_t clusterId;
+    uint32_t numDetections;
+    double   range, azimuth, elevation;
+    double   strength, snr, rcs, microDoppler;
+    double   x, y, z;  // Cartesian
+};
+
+// One association/gating entry (matched or unmatched)
+struct AssocEntryWire {
+    uint32_t trackId;
+    uint32_t clusterId;   // 0xFFFFFFFF = no cluster (unmatched track)
+    double   distance;    // Mahalanobis distance (-1 = unmatched)
+    uint32_t matched;     // 1 = matched, 0 = unmatched track/cluster
+    uint32_t pad;
+};
+
+// One predicted-state entry (post-predict, pre-update)
+struct PredictedEntryWire {
+    uint32_t trackId;
+    uint32_t trackStatus; // TrackStatus enum value
+    // State vector [x,vx,ax, y,vy,ay, z,vz,az]
+    double x,  vx, ax;
+    double y,  vy, ay;
+    double z,  vz, az;
+    // Spherical
+    double range, azimuth, elevation;
+    // Position covariance diagonal elements
+    double covX, covY, covZ;
+    // IMM model probabilities [CV, CA1, CA2, CTR1, CTR2]
+    double modelProb[5];
+};
+
+#pragma pack(pop)
+
+// ---------------------------------------------------------------------------
 // Clustering method enum
 // ---------------------------------------------------------------------------
 enum class ClusterMethod {

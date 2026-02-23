@@ -19,6 +19,7 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <cstring>
@@ -27,6 +28,7 @@
 #include <csignal>
 #include <atomic>
 #include <map>
+#include <filesystem>
 
 static std::atomic<bool> g_running{true};
 
@@ -337,6 +339,213 @@ int csvMode(const std::string& filename) {
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// dat mode: export per-stage .dat files to an output directory
+// ---------------------------------------------------------------------------
+int datMode(const std::string& filename, const std::string& outDir) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "ERROR: Cannot open file: " << filename << std::endl;
+        return 1;
+    }
+
+    // Create output directory
+    std::error_code ec;
+    std::filesystem::create_directories(outDir, ec);
+    if (ec) {
+        std::cerr << "ERROR: Cannot create output directory: " << outDir << std::endl;
+        return 1;
+    }
+
+    // Open per-stage output files
+    auto openDat = [&](const std::string& name) {
+        return std::ofstream(outDir + "/" + name, std::ios::out | std::ios::trunc);
+    };
+
+    std::ofstream fRaw     = openDat("raw_detections.dat");
+    std::ofstream fPre     = openDat("preprocessed.dat");
+    std::ofstream fCluster = openDat("clusters.dat");
+    std::ofstream fPred    = openDat("predictions.dat");
+    std::ofstream fAssoc   = openDat("associations.dat");
+    std::ofstream fInit    = openDat("tracks_initiated.dat");
+    std::ofstream fUpd     = openDat("tracks_updated.dat");
+    std::ofstream fDel     = openDat("tracks_deleted.dat");
+    std::ofstream fSent    = openDat("tracks_sent.dat");
+
+    // Write headers
+    fRaw     << "timestamp\tdwell_count\tnum_detections\tdet_idx"
+             << "\trange\tazimuth_deg\televation_deg\tstrength\tnoise\tsnr\trcs\tmicroDoppler\n";
+    fPre     << "timestamp\tnum_detections\tdet_idx"
+             << "\trange\tazimuth_deg\televation_deg\tstrength\tnoise\tsnr\trcs\tmicroDoppler\n";
+    fCluster << "timestamp\tcluster_id\tnum_detections"
+             << "\trange\tazimuth_deg\televation_deg\tstrength\tsnr\trcs\tmicroDoppler\tx\ty\tz\n";
+    fPred    << "timestamp\ttrack_id\tx\tvx\tax\ty\tvy\tay\tz\tvz\taz\n";
+    fAssoc   << "timestamp\ttrack_id\tcluster_id\tdistance\n";
+    fInit    << "timestamp\ttrack_id\tx\tvx\tax\ty\tvy\tay\tz\tvz\taz\n";
+    fUpd     << "timestamp\ttrack_id\tstatus\tx\tvx\tax\ty\tvy\tay\tz\tvz\taz\n";
+    fDel     << "timestamp\ttrack_id\n";
+    fSent    << "timestamp\ttrack_id\tstatus\tclassification\trange\tazimuth_deg\televation_deg"
+             << "\trange_rate\tx\ty\tz\tvx\tvy\tvz\tquality\thits\tmisses\tage\n";
+
+    cuas::LogRecordHeader hdr;
+    uint64_t records = 0;
+
+    while (cuas::BinaryLogger::readHeader(file, hdr) && g_running.load()) {
+        std::vector<uint8_t> payload;
+        if (!cuas::BinaryLogger::readPayload(file, hdr.payloadSize, payload)) break;
+        ++records;
+
+        auto type = static_cast<cuas::LogRecordType>(hdr.recordType);
+        const uint8_t* p = payload.data();
+
+        switch (type) {
+            case cuas::LogRecordType::RawDetection: {
+                if (payload.size() < 20) break;
+                uint32_t msgId, dwellCount, numDets; uint64_t ts;
+                std::memcpy(&msgId,      p, 4); p += 4;
+                std::memcpy(&dwellCount, p, 4); p += 4;
+                std::memcpy(&ts,         p, 8); p += 8;
+                std::memcpy(&numDets,    p, 4); p += 4;
+                for (uint32_t i = 0; i < numDets && p + sizeof(cuas::Detection) <= payload.data() + payload.size(); ++i) {
+                    cuas::Detection d;
+                    std::memcpy(&d, p, sizeof(d)); p += sizeof(d);
+                    fRaw << std::fixed << std::setprecision(4)
+                         << hdr.timestamp << "\t" << dwellCount << "\t" << numDets << "\t" << i
+                         << "\t" << d.range << "\t" << d.azimuth * cuas::RAD2DEG
+                         << "\t" << d.elevation * cuas::RAD2DEG
+                         << "\t" << d.strength << "\t" << d.noise
+                         << "\t" << d.snr << "\t" << d.rcs << "\t" << d.microDoppler << "\n";
+                }
+                break;
+            }
+            case cuas::LogRecordType::Preprocessed: {
+                if (payload.size() < 4) break;
+                uint32_t n; std::memcpy(&n, p, 4); p += 4;
+                for (uint32_t i = 0; i < n && p + sizeof(cuas::Detection) <= payload.data() + payload.size(); ++i) {
+                    cuas::Detection d;
+                    std::memcpy(&d, p, sizeof(d)); p += sizeof(d);
+                    fPre << std::fixed << std::setprecision(4)
+                         << hdr.timestamp << "\t" << n << "\t" << i
+                         << "\t" << d.range << "\t" << d.azimuth * cuas::RAD2DEG
+                         << "\t" << d.elevation * cuas::RAD2DEG
+                         << "\t" << d.strength << "\t" << d.noise
+                         << "\t" << d.snr << "\t" << d.rcs << "\t" << d.microDoppler << "\n";
+                }
+                break;
+            }
+            case cuas::LogRecordType::Clustered: {
+                if (payload.size() < 4) break;
+                uint32_t n; std::memcpy(&n, p, 4); p += 4;
+                for (uint32_t i = 0; i < n; ++i) {
+                    if (p + 4 > payload.data() + payload.size()) break;
+                    uint32_t cid; std::memcpy(&cid, p, 4); p += 4;
+                    double r, az, el, str, snr, rcs, ud; uint32_t nd;
+                    double cx, cy, cz;
+                    std::memcpy(&r,   p, 8); p += 8;
+                    std::memcpy(&az,  p, 8); p += 8;
+                    std::memcpy(&el,  p, 8); p += 8;
+                    std::memcpy(&str, p, 8); p += 8;
+                    std::memcpy(&snr, p, 8); p += 8;
+                    std::memcpy(&rcs, p, 8); p += 8;
+                    std::memcpy(&ud,  p, 8); p += 8;
+                    std::memcpy(&nd,  p, 4); p += 4;
+                    std::memcpy(&cx,  p, 8); p += 8;
+                    std::memcpy(&cy,  p, 8); p += 8;
+                    std::memcpy(&cz,  p, 8); p += 8;
+                    // Skip detectionIndices
+                    uint32_t ni; std::memcpy(&ni, p, 4); p += 4;
+                    p += ni * sizeof(uint32_t);
+                    fCluster << std::fixed << std::setprecision(4)
+                             << hdr.timestamp << "\t" << cid << "\t" << nd
+                             << "\t" << r << "\t" << az * cuas::RAD2DEG
+                             << "\t" << el * cuas::RAD2DEG
+                             << "\t" << str << "\t" << snr << "\t" << rcs << "\t" << ud
+                             << "\t" << cx << "\t" << cy << "\t" << cz << "\n";
+                }
+                break;
+            }
+            case cuas::LogRecordType::Predicted: {
+                if (payload.size() < 4 + cuas::STATE_DIM * 8) break;
+                uint32_t tid; std::memcpy(&tid, p, 4); p += 4;
+                double sv[cuas::STATE_DIM];
+                for (int i = 0; i < cuas::STATE_DIM; ++i) { std::memcpy(&sv[i], p, 8); p += 8; }
+                fPred << std::fixed << std::setprecision(4)
+                      << hdr.timestamp << "\t" << tid
+                      << "\t" << sv[0] << "\t" << sv[1] << "\t" << sv[2]
+                      << "\t" << sv[3] << "\t" << sv[4] << "\t" << sv[5]
+                      << "\t" << sv[6] << "\t" << sv[7] << "\t" << sv[8] << "\n";
+                break;
+            }
+            case cuas::LogRecordType::Associated: {
+                if (payload.size() < 16) break;
+                uint32_t tid, cid; double dist;
+                std::memcpy(&tid,  p, 4); p += 4;
+                std::memcpy(&cid,  p, 4); p += 4;
+                std::memcpy(&dist, p, 8);
+                fAssoc << std::fixed << std::setprecision(4)
+                       << hdr.timestamp << "\t" << tid << "\t" << cid << "\t" << dist << "\n";
+                break;
+            }
+            case cuas::LogRecordType::TrackInitiated: {
+                if (payload.size() < 4 + cuas::STATE_DIM * 8) break;
+                uint32_t tid; std::memcpy(&tid, p, 4); p += 4;
+                double sv[cuas::STATE_DIM];
+                for (int i = 0; i < cuas::STATE_DIM; ++i) { std::memcpy(&sv[i], p, 8); p += 8; }
+                fInit << std::fixed << std::setprecision(4)
+                      << hdr.timestamp << "\t" << tid
+                      << "\t" << sv[0] << "\t" << sv[1] << "\t" << sv[2]
+                      << "\t" << sv[3] << "\t" << sv[4] << "\t" << sv[5]
+                      << "\t" << sv[6] << "\t" << sv[7] << "\t" << sv[8] << "\n";
+                break;
+            }
+            case cuas::LogRecordType::TrackUpdated: {
+                if (payload.size() < 8 + cuas::STATE_DIM * 8) break;
+                uint32_t tid, status; std::memcpy(&tid, p, 4); p += 4;
+                std::memcpy(&status, p, 4); p += 4;
+                double sv[cuas::STATE_DIM];
+                for (int i = 0; i < cuas::STATE_DIM; ++i) { std::memcpy(&sv[i], p, 8); p += 8; }
+                fUpd << std::fixed << std::setprecision(4)
+                     << hdr.timestamp << "\t" << tid << "\t" << status
+                     << "\t" << sv[0] << "\t" << sv[1] << "\t" << sv[2]
+                     << "\t" << sv[3] << "\t" << sv[4] << "\t" << sv[5]
+                     << "\t" << sv[6] << "\t" << sv[7] << "\t" << sv[8] << "\n";
+                break;
+            }
+            case cuas::LogRecordType::TrackDeleted: {
+                if (payload.size() < 4) break;
+                uint32_t tid; std::memcpy(&tid, p, 4);
+                fDel << hdr.timestamp << "\t" << tid << "\n";
+                break;
+            }
+            case cuas::LogRecordType::TrackSent: {
+                if (payload.size() < sizeof(cuas::TrackUpdateMessage)) break;
+                cuas::TrackUpdateMessage msg;
+                std::memcpy(&msg, p, sizeof(msg));
+                fSent << std::fixed << std::setprecision(4)
+                      << hdr.timestamp << "\t" << msg.trackId
+                      << "\t" << static_cast<int>(msg.status)
+                      << "\t" << static_cast<int>(msg.classification)
+                      << "\t" << msg.range
+                      << "\t" << msg.azimuth * cuas::RAD2DEG
+                      << "\t" << msg.elevation * cuas::RAD2DEG
+                      << "\t" << msg.rangeRate
+                      << "\t" << msg.x << "\t" << msg.y << "\t" << msg.z
+                      << "\t" << msg.vx << "\t" << msg.vy << "\t" << msg.vz
+                      << "\t" << msg.trackQuality
+                      << "\t" << msg.hitCount << "\t" << msg.missCount << "\t" << msg.age << "\n";
+                break;
+            }
+            default: break;
+        }
+    }
+
+    std::cout << "Exported " << records << " records to: " << outDir << std::endl;
+    std::cout << "  raw_detections.dat  preprocessed.dat  clusters.dat" << std::endl;
+    std::cout << "  predictions.dat     associations.dat" << std::endl;
+    std::cout << "  tracks_initiated.dat  tracks_updated.dat  tracks_deleted.dat  tracks_sent.dat" << std::endl;
+    return 0;
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << "Counter-UAS Radar Tracker - Log Extractor & Replay Tool" << std::endl;
@@ -347,11 +556,13 @@ int main(int argc, char* argv[]) {
         std::cerr << "  extract [verbose]              - Extract and print log contents" << std::endl;
         std::cerr << "  replay [ip] [port] [speed]     - Replay detections via UDP" << std::endl;
         std::cerr << "  csv                            - Export track data as CSV" << std::endl;
+        std::cerr << "  dat [output_dir]               - Export per-stage .dat files" << std::endl;
         std::cerr << std::endl;
         std::cerr << "Examples:" << std::endl;
         std::cerr << "  " << argv[0] << " tracker_20260101_120000.bin extract verbose" << std::endl;
         std::cerr << "  " << argv[0] << " tracker_20260101_120000.bin replay 127.0.0.1 50000 2.0" << std::endl;
         std::cerr << "  " << argv[0] << " tracker_20260101_120000.bin csv > tracks.csv" << std::endl;
+        std::cerr << "  " << argv[0] << " tracker_20260101_120000.bin dat ./exported_data" << std::endl;
         return 1;
     }
 
@@ -373,6 +584,9 @@ int main(int argc, char* argv[]) {
         return replayMode(filename, targetIp, targetPort, speedFactor);
     } else if (mode == "csv") {
         return csvMode(filename);
+    } else if (mode == "dat") {
+        std::string outDir = (argc > 3) ? argv[3] : "./dat_export";
+        return datMode(filename, outDir);
     } else {
         std::cerr << "Unknown mode: " << mode << std::endl;
         return 1;

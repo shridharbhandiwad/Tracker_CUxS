@@ -42,10 +42,52 @@ void TrackSender::sendTrackUpdates(const std::vector<TrackUpdateMessage>& update
 
     if (socket_.send(data.data(), static_cast<int>(data.size()))) {
         msgCount_.fetch_add(1);
-        LOG_DEBUG("TrackSender", "Sent %zu track updates (%zu bytes)",
-                  toSend.size(), data.size());
+        LOG_DEBUG("TrackSender", "Sent %zu track updates (%zu bytes) TrackId %zu",
+                  toSend.size(), data.size(), toSend[0].trackId);
     } else {
         LOG_WARN("TrackSender", "Failed to send track updates");
+    }
+}
+
+void TrackSender::sendRawDetections(const SPDetectionMessage& msg) {
+    auto data = MessageSerializer::serialize(msg);
+    if (!socket_.send(data.data(), static_cast<int>(data.size()))) {
+        LOG_WARN("TrackSender", "Failed to forward raw detection message (dwell %u)",
+                 msg.dwellCount);
+    } else {
+        LOG_DEBUG("TrackSender", "Forwarded dwell %u: %u detections (%zu bytes)",
+                  msg.dwellCount, msg.numDetections, data.size());
+    }
+}
+
+void TrackSender::sendClusterTable(const std::vector<ClusterWire>& clusters,
+                                    Timestamp ts, uint32_t dwellCount) {
+    if (clusters.empty()) return;
+    auto data = MessageSerializer::serializeClusterTable(clusters, ts, dwellCount);
+    if (!socket_.send(data.data(), static_cast<int>(data.size()))) {
+        LOG_WARN("TrackSender", "Failed to send cluster table (dwell %u)", dwellCount);
+    } else {
+        LOG_DEBUG("TrackSender", "Sent %zu clusters (%zu bytes)", clusters.size(), data.size());
+    }
+}
+
+void TrackSender::sendAssocTable(const std::vector<AssocEntryWire>& entries, Timestamp ts) {
+    if (entries.empty()) return;
+    auto data = MessageSerializer::serializeAssocTable(entries, ts);
+    if (!socket_.send(data.data(), static_cast<int>(data.size()))) {
+        LOG_WARN("TrackSender", "Failed to send assoc table");
+    } else {
+        LOG_DEBUG("TrackSender", "Sent %zu assoc entries (%zu bytes)", entries.size(), data.size());
+    }
+}
+
+void TrackSender::sendPredictedTable(const std::vector<PredictedEntryWire>& entries, Timestamp ts) {
+    if (entries.empty()) return;
+    auto data = MessageSerializer::serializePredictedTable(entries, ts);
+    if (!socket_.send(data.data(), static_cast<int>(data.size()))) {
+        LOG_WARN("TrackSender", "Failed to send predicted table");
+    } else {
+        LOG_DEBUG("TrackSender", "Sent %zu predicted entries (%zu bytes)", entries.size(), data.size());
     }
 }
 

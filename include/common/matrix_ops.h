@@ -223,6 +223,25 @@ inline StateMatrix kh(const std::array<std::array<double, MEAS_DIM>, STATE_DIM>&
     return R;
 }
 
+// K * R * K^T  where K is (STATE_DIM x MEAS_DIM), R is (MEAS_DIM x MEAS_DIM).
+// Returns (STATE_DIM x STATE_DIM).  Required by the Joseph-form covariance update.
+inline StateMatrix krkt(const std::array<std::array<double, MEAS_DIM>, STATE_DIM>& K,
+                        const MeasMatrix& R) {
+    // Step 1: KR = K * R  (STATE_DIM x MEAS_DIM)
+    std::array<std::array<double, MEAS_DIM>, STATE_DIM> KR{};
+    for (int i = 0; i < STATE_DIM; ++i)
+        for (int j = 0; j < MEAS_DIM; ++j)
+            for (int k = 0; k < MEAS_DIM; ++k)
+                KR[i][j] += K[i][k] * R[k][j];
+    // Step 2: (KR) * K^T  (STATE_DIM x STATE_DIM)
+    StateMatrix result = matZero();
+    for (int i = 0; i < STATE_DIM; ++i)
+        for (int j = 0; j < STATE_DIM; ++j)
+            for (int k = 0; k < MEAS_DIM; ++k)
+                result[i][j] += KR[i][k] * K[j][k]; // K^T[k][j] = K[j][k]
+    return result;
+}
+
 // Mahalanobis distance: innov^T * Sinv * innov
 inline double mahalanobisDistance(const MeasVector& innov, const MeasMatrix& Sinv) {
     double d = 0.0;

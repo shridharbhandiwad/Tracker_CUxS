@@ -1,0 +1,13 @@
+release/main.o
+release/mainwindow.o
+release/udpreceiver.o
+release/ppiwidget.o
+release/scopewidget.o
+release/timeserieswidget.o
+release/logdialog.o
+release/moc_mainwindow.o
+release/moc_udpreceiver.o
+release/moc_ppiwidget.o
+release/moc_scopewidget.o
+release/moc_timeserieswidget.o
+release/moc_logdialog.o

@@ -67,6 +67,25 @@ public:
     static bool deserializeTrackTable(
         const uint8_t* data, int len,
         std::vector<TrackUpdateMessage>& tracks, uint64_t& timestamp);
+
+    // Pipeline intermediate stage messages (clusters, association, predicted)
+    static std::vector<uint8_t> serializeClusterTable(
+        const std::vector<ClusterWire>& clusters, uint64_t timestamp, uint32_t dwellCount);
+    static bool deserializeClusterTable(
+        const uint8_t* data, int len,
+        std::vector<ClusterWire>& clusters, uint64_t& timestamp, uint32_t& dwellCount);
+
+    static std::vector<uint8_t> serializeAssocTable(
+        const std::vector<AssocEntryWire>& entries, uint64_t timestamp);
+    static bool deserializeAssocTable(
+        const uint8_t* data, int len,
+        std::vector<AssocEntryWire>& entries, uint64_t& timestamp);
+
+    static std::vector<uint8_t> serializePredictedTable(
+        const std::vector<PredictedEntryWire>& entries, uint64_t timestamp);
+    static bool deserializePredictedTable(
+        const uint8_t* data, int len,
+        std::vector<PredictedEntryWire>& entries, uint64_t& timestamp);
 };
 
 } // namespace cuas

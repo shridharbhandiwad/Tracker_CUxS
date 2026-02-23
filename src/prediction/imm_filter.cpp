@@ -177,12 +177,14 @@ void IMMFilter::update(IMMState& state, const MeasVector& z, const MeasMatrix& R
 
         StateMatrix KH = mat::kh(K, H);
         StateMatrix IminKH = mat::subMat(matIdentity(), KH);
-        state.modelCovariances[m] = mat::multiply(IminKH, state.modelCovariances[m]);
-
-        // Joseph form stabilization would be:
-        // P = (I-KH)P(I-KH)' + KRK'
-        // Using the simplified form above for performance; numerically
-        // stable enough for typical radar tracking covariance magnitudes.
+        // Joseph form: P = (I-KH) P (I-KH)^T + K R K^T
+        // Prevents P losing positive-definiteness under repeated sequential
+        // updates (a common failure mode of the simplified (I-KH)P form).
+        StateMatrix IminKHt = mat::transpose(IminKH);
+        StateMatrix term1 = mat::multiply(
+            mat::multiply(IminKH, state.modelCovariances[m]), IminKHt);
+        StateMatrix term2 = mat::krkt(K, R);
+        state.modelCovariances[m] = mat::addMat(term1, term2);
     }
 
     updateModeProbabilities(state, z, R);
