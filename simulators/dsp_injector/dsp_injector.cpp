@@ -4,6 +4,9 @@
  * Generates synthetic SP detection messages simulating drone targets
  * and sends them over UDP to the tracker at configurable rates.
  *
+ * Radar specs (per antenna wall, 4 walls): Azimuth FoV ±60°, Elevation FoV 90°,
+ * Range accuracy 1 m, Angular accuracy 0.3° (az/el), Max range 30 km.
+ *
  * Usage: dsp_injector [tracker_ip] [tracker_port] [num_targets] [duration_sec]
  */
 
@@ -12,6 +15,7 @@
 #include "common/constants.h"
 #include "common/logger.h"
 
+#include <algorithm>
 #include <iostream>
 #include <cmath>
 #include <random>
@@ -25,6 +29,16 @@
 static std::atomic<bool> g_running{true};
 
 void signalHandler(int) { g_running.store(false); }
+
+// Radar specs per antenna wall (4 walls)
+namespace RadarSpecs {
+    constexpr double AZ_HALF_FOV_RAD = 60.0 * cuas::DEG2RAD;   // ±60° azimuth
+    constexpr double EL_FOV_MAX_RAD  = 90.0 * cuas::DEG2RAD;   // 0° to 90° elevation
+    constexpr double EL_FOV_MIN_RAD  = 0.0;
+    constexpr double RANGE_ACCURACY_M = 1.0;                    // 1 m std
+    constexpr double ANGULAR_ACCURACY_RAD = 0.3 * cuas::DEG2RAD; // 0.3° std (az & el)
+    constexpr double MAX_RANGE_M     = 30000.0;                // 30 km
+}
 
 struct SimTarget {
     double range;
@@ -47,9 +61,9 @@ public:
     }
 
     void initTargets(int n) {
-        std::uniform_real_distribution<> rangeDist(500.0, 8000.0);
-        std::uniform_real_distribution<> azDist(-1.5, 1.5);
-        std::uniform_real_distribution<> elDist(0.02, 0.5);
+        std::uniform_real_distribution<> rangeDist(500.0, std::min(8000.0, RadarSpecs::MAX_RANGE_M - 500.0));
+        std::uniform_real_distribution<> azDist(-RadarSpecs::AZ_HALF_FOV_RAD, RadarSpecs::AZ_HALF_FOV_RAD);
+        std::uniform_real_distribution<> elDist(RadarSpecs::EL_FOV_MIN_RAD + 0.02, RadarSpecs::EL_FOV_MAX_RAD * 0.5);
         std::uniform_real_distribution<> speedDist(5.0, 40.0);
         std::uniform_real_distribution<> headingDist(-cuas::PI, cuas::PI);
         std::uniform_real_distribution<> turnDist(-0.05, 0.05);
@@ -106,7 +120,14 @@ public:
             t.azimuth   = std::atan2(y, x);
             t.elevation = std::asin(z / std::max(t.range, 1.0));
 
-            if (t.range > 20000.0 || t.range < 30.0) {
+            if (t.range > RadarSpecs::MAX_RANGE_M || t.range < 30.0) {
+                t.active = false;
+            }
+            // Keep within azimuth FoV ±60°
+            if (t.azimuth < -RadarSpecs::AZ_HALF_FOV_RAD || t.azimuth > RadarSpecs::AZ_HALF_FOV_RAD) {
+                t.active = false;
+            }
+            if (t.elevation < RadarSpecs::EL_FOV_MIN_RAD || t.elevation > RadarSpecs::EL_FOV_MAX_RAD) {
                 t.active = false;
             }
         }
@@ -118,9 +139,10 @@ public:
         msg.dwellCount  = dwellCount;
         msg.timestamp   = cuas::nowMicros();
 
-        std::normal_distribution<> rangeNoise(0.0, 10.0);
-        std::normal_distribution<> azNoise(0.0, 0.005);
-        std::normal_distribution<> elNoise(0.0, 0.005);
+        // Noise per radar specs: range 1 m std, angular 0.3° std (az & el)
+        std::normal_distribution<> rangeNoise(0.0, RadarSpecs::RANGE_ACCURACY_M);
+        std::normal_distribution<> azNoise(0.0, RadarSpecs::ANGULAR_ACCURACY_RAD);
+        std::normal_distribution<> elNoise(0.0, RadarSpecs::ANGULAR_ACCURACY_RAD);
         std::normal_distribution<> strNoise(0.0, 3.0);
         std::uniform_int_distribution<> numFalseAlarms(0, 3);
         std::uniform_real_distribution<> probDetect(0.0, 1.0);
@@ -129,14 +151,18 @@ public:
         for (const auto& t : targets_) {
             if (!t.active) continue;
 
-            // Detection probability depends on range and RCS
-            double pd = 0.95 - (t.range / 50000.0);
+            // Detection probability depends on range and RCS (max range 30 km)
+            double pd = 0.95 - (t.range / RadarSpecs::MAX_RANGE_M);
             if (probDetect(rng_) > pd) continue;
 
             cuas::Detection det;
             det.range      = t.range + rangeNoise(rng_);
             det.azimuth    = t.azimuth + azNoise(rng_);
             det.elevation  = t.elevation + elNoise(rng_);
+            // Clamp to radar FoV and max range
+            det.range      = std::max(0.0, std::min(RadarSpecs::MAX_RANGE_M, det.range));
+            det.azimuth    = std::max(-RadarSpecs::AZ_HALF_FOV_RAD, std::min(RadarSpecs::AZ_HALF_FOV_RAD, det.azimuth));
+            det.elevation  = std::max(RadarSpecs::EL_FOV_MIN_RAD, std::min(RadarSpecs::EL_FOV_MAX_RAD, det.elevation));
             det.rcs        = t.rcs + strNoise(rng_) * 0.5;
             det.microDoppler = t.microDoppler + strNoise(rng_) * 10.0;
 
@@ -156,6 +182,9 @@ public:
                     extra.range     += rangeNoise(rng_) * 2.0;
                     extra.azimuth   += azNoise(rng_) * 2.0;
                     extra.elevation += elNoise(rng_) * 2.0;
+                    extra.range     = std::max(0.0, std::min(RadarSpecs::MAX_RANGE_M, extra.range));
+                    extra.azimuth   = std::max(-RadarSpecs::AZ_HALF_FOV_RAD, std::min(RadarSpecs::AZ_HALF_FOV_RAD, extra.azimuth));
+                    extra.elevation = std::max(RadarSpecs::EL_FOV_MIN_RAD, std::min(RadarSpecs::EL_FOV_MAX_RAD, extra.elevation));
                     extra.strength  -= 3.0 + std::abs(strNoise(rng_));
                     extra.snr        = extra.strength - extra.noise;
                 }
@@ -163,11 +192,11 @@ public:
             }
         }
 
-        // False alarms (clutter)
+        // False alarms (clutter) within radar FoV and max range
         int nFA = numFalseAlarms(rng_);
-        std::uniform_real_distribution<> faRange(100.0, 15000.0);
-        std::uniform_real_distribution<> faAz(-2.0, 2.0);
-        std::uniform_real_distribution<> faEl(0.0, 0.3);
+        std::uniform_real_distribution<> faRange(100.0, RadarSpecs::MAX_RANGE_M);
+        std::uniform_real_distribution<> faAz(-RadarSpecs::AZ_HALF_FOV_RAD, RadarSpecs::AZ_HALF_FOV_RAD);
+        std::uniform_real_distribution<> faEl(RadarSpecs::EL_FOV_MIN_RAD, RadarSpecs::EL_FOV_MAX_RAD * 0.5);
 
         for (int i = 0; i < nFA; ++i) {
             cuas::Detection fa;

@@ -17,11 +17,11 @@
     },
     "preprocessing": {
         "minRange": 50.0,
-        "maxRange": 20000.0,
-        "minAzimuth": -3.14159265,
-        "maxAzimuth": 3.14159265,
-        "minElevation": -0.1745,
-        "maxElevation": 1.5708,
+        "maxRange": 30000.0,
+        "minAzimuth": -1.04719755,
+        "maxAzimuth": 1.04719755,
+        "minElevation": 0.0,
+        "maxElevation": 1.57079633,
         "minSNR": 3.0,
         "maxSNR": 60.0,
         "minRCS": -30.0,
@@ -32,20 +32,20 @@
     "clustering": {
         "method": "dbscan",
         "dbscan": {
-            "epsilonRange": 75.0,
-            "epsilonAzimuth": 0.03,
-            "epsilonElevation": 0.03,
+            "epsilonRange": 5.0,
+            "epsilonAzimuth": 0.006,
+            "epsilonElevation": 0.006,
             "minPoints": 1
         },
         "rangeBased": {
-            "rangeGateSize": 75.0,
-            "azimuthGateSize": 0.03,
-            "elevationGateSize": 0.03
+            "rangeGateSize": 5.0,
+            "azimuthGateSize": 0.006,
+            "elevationGateSize": 0.006
         },
         "rangeStrength": {
-            "rangeGateSize": 75.0,
-            "azimuthGateSize": 0.03,
-            "elevationGateSize": 0.03,
+            "rangeGateSize": 5.0,
+            "azimuthGateSize": 0.006,
+            "elevationGateSize": 0.006,
             "strengthGateSize": 6.0
         }
     },
@@ -101,7 +101,7 @@
             "method": "mOfN",
             "m": 3,
             "n": 5,
-            "maxInitiationRange": 18000.0,
+            "maxInitiationRange": 30000.0,
             "velocityGate": 150.0
         },
         "maintenance": {
@@ -115,11 +115,11 @@
         "deletion": {
             "maxCoastingDwells": 15,
             "minQuality": 0.05,
-            "maxRange": 25000.0
+            "maxRange": 30000.0
         },
         "initialCovariance": {
-            "positionStd": 100.0,
-            "velocityStd": 50.0,
+            "positionStd": 10.0,
+            "velocityStd": 20.0,
             "accelerationStd": 10.0
         }
     },
