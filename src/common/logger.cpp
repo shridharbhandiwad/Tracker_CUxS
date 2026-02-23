@@ -28,7 +28,8 @@ BinaryLogger::~BinaryLogger() {
     close();
 }
 
-bool BinaryLogger::open(const std::string& directory, const std::string& prefix) {
+bool BinaryLogger::open(const std::string& directory, const std::string& prefix,
+                        const std::string& runInfo) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (open_) return true;
 
@@ -50,6 +51,10 @@ bool BinaryLogger::open(const std::string& directory, const std::string& prefix)
     file_.open(fname.str(), std::ios::binary | std::ios::out);
     if (!file_.is_open()) return false;
 
+    // If run info provided, write as first record to .bin (so extractor can show it)
+    if (!runInfo.empty())
+        writeRecord(LogRecordType::RunInfo, 0, runInfo.data(), static_cast<uint32_t>(runInfo.size()));
+
     std::string combinedPath = fname.str();
     size_t dot = combinedPath.rfind(".bin");
     if (dot != std::string::npos)
@@ -58,6 +63,14 @@ bool BinaryLogger::open(const std::string& directory, const std::string& prefix)
         combinedPath += "_combined_track_flow.dat";
     combinedDat_.open(combinedPath, std::ios::out);
     if (combinedDat_.is_open()) {
+        // Run details at top (algorithms/models used in this run)
+        if (!runInfo.empty()) {
+            std::istringstream lines(runInfo);
+            std::string line;
+            while (std::getline(lines, line))
+                combinedDat_ << "# " << line << "\n";
+            combinedDat_ << "\n";
+        }
         combinedDat_ << "step\tdwell\ttimestamp_us\tnum_detections\tdet_idx\trange_m\tazimuth_deg\televation_deg\trange_rate"
                     << "\tstrength\tnoise\tsnr\trcs\tmicroDoppler\tcluster_id\tassoc_distance\ttrack_id\tstatus\tclassification"
                     << "\tx_m\ty_m\tz_m\tvx\tvy\tvz\tax\tay\taz\tquality\thits\tmisses\tage\n";

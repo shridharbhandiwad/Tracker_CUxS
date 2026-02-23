@@ -173,4 +173,7 @@ struct TrackerConfig {
 
 TrackerConfig loadConfig(const std::string& filepath);
 
+/** Build a multi-line string describing algorithms and models used (for run headers). */
+std::string getRunInfoString(const TrackerConfig& cfg);
+
 } // namespace cuas

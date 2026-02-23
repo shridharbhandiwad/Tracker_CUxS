@@ -14,7 +14,9 @@ public:
     BinaryLogger();
     ~BinaryLogger();
 
-    bool open(const std::string& directory, const std::string& prefix);
+    /** If runInfo non-empty, writes it as first record to .bin and at top of combined_track_flow.dat */
+    bool open(const std::string& directory, const std::string& prefix,
+              const std::string& runInfo = std::string());
     void close();
     bool isOpen() const;
 

@@ -1,5 +1,6 @@
 #include "track_management/track_manager.h"
 #include "common/logger.h"
+#include "common/config.h"
 #include "common/constants.h"
 #include <algorithm>
 #include <cmath>
@@ -23,7 +24,7 @@ TrackManager::TrackManager(const TrackerConfig& cfg) : config_(cfg) {
             measurementNoise_[i][j] = (i == j) ? 625.0 : 0.0;
 
     if (cfg.system.logEnabled) {
-        logger_.open(cfg.system.logDirectory, "tracker");
+        logger_.open(cfg.system.logDirectory, "tracker", getRunInfoString(cfg));
     }
 
     LOG_INFO("TrackManager", "Initialized. Cluster: %s, Association: %s",

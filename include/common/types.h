@@ -228,7 +228,8 @@ enum class LogRecordType : uint32_t {
     TrackInitiated = 5,
     TrackUpdated   = 6,
     TrackDeleted   = 7,
-    TrackSent      = 8
+    TrackSent      = 8,
+    RunInfo        = 9
 };
 
 static constexpr uint32_t LOG_MAGIC = 0xCAFEBABE;

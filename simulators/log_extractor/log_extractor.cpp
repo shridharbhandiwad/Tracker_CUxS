@@ -45,6 +45,7 @@ const char* recordTypeName(cuas::LogRecordType type) {
         case cuas::LogRecordType::TrackUpdated:   return "TRACK_UPDATE";
         case cuas::LogRecordType::TrackDeleted:   return "TRACK_DELETE";
         case cuas::LogRecordType::TrackSent:      return "TRACK_SENT";
+        case cuas::LogRecordType::RunInfo:        return "RUN_INFO";
         default: return "UNKNOWN";
     }
 }
@@ -389,10 +390,12 @@ int datMode(const std::string& filename, const std::string& outDir) {
     fSent    << "timestamp\ttrack_id\tstatus\tclassification\trange\tazimuth_deg\televation_deg"
              << "\trange_rate\tx\ty\tz\tvx\tvy\tvz\tquality\thits\tmisses\tage\n";
 
-    // Combined track flow: one header with named columns; each row has same columns (empty where N/A)
-    fCombined << "step\tdwell\ttimestamp_us\tnum_detections\tdet_idx\trange_m\tazimuth_deg\televation_deg\trange_rate"
-              << "\tstrength\tnoise\tsnr\trcs\tmicroDoppler\tcluster_id\tassoc_distance\ttrack_id\tstatus\tclassification"
-              << "\tx_m\ty_m\tz_m\tvx\tvy\tvz\tax\tay\taz\tquality\thits\tmisses\tage\n";
+    // Combined header written on first data record (or after RunInfo)
+    const char* combinedHeader =
+        "step\tdwell\ttimestamp_us\tnum_detections\tdet_idx\trange_m\tazimuth_deg\televation_deg\trange_rate"
+        "\tstrength\tnoise\tsnr\trcs\tmicroDoppler\tcluster_id\tassoc_distance\ttrack_id\tstatus\tclassification"
+        "\tx_m\ty_m\tz_m\tvx\tvy\tvz\tax\tay\taz\tquality\thits\tmisses\tage\n";
+    bool combinedHeaderWritten = false;
 
     cuas::LogRecordHeader hdr;
     uint64_t records = 0;
@@ -405,6 +408,24 @@ int datMode(const std::string& filename, const std::string& outDir) {
 
         auto type = static_cast<cuas::LogRecordType>(hdr.recordType);
         const uint8_t* p = payload.data();
+
+        // Run info: write algo/model details at top of combined file, then column header
+        if (type == cuas::LogRecordType::RunInfo) {
+            std::string runInfo(payload.begin(), payload.end());
+            std::istringstream lines(runInfo);
+            std::string line;
+            while (std::getline(lines, line))
+                fCombined << "# " << line << "\n";
+            fCombined << "\n";
+            fCombined << combinedHeader;
+            combinedHeaderWritten = true;
+            continue;
+        }
+
+        if (!combinedHeaderWritten) {
+            fCombined << combinedHeader;
+            combinedHeaderWritten = true;
+        }
 
         switch (type) {
             case cuas::LogRecordType::RawDetection: {

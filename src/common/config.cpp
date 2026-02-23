@@ -367,4 +367,85 @@ TrackerConfig loadConfig(const std::string& filepath) {
     return cfg;
 }
 
+std::string getRunInfoString(const TrackerConfig& cfg) {
+    std::ostringstream os;
+    os << "=== Tracker run: algorithms and models ===\n";
+
+    // Clustering
+    os << "Clustering: ";
+    switch (cfg.clustering.method) {
+        case ClusterMethod::DBSCAN:
+            os << "DBSCAN (epsilonRange=" << cfg.clustering.dbscan.epsilonRange
+               << " m, epsilonAzimuth=" << cfg.clustering.dbscan.epsilonAzimuth
+               << " rad, epsilonElevation=" << cfg.clustering.dbscan.epsilonElevation
+               << " rad, minPoints=" << cfg.clustering.dbscan.minPoints << ")";
+            break;
+        case ClusterMethod::RangeBased:
+            os << "RangeBased (rangeGate=" << cfg.clustering.rangeBased.rangeGateSize
+               << " m, azimuthGate=" << cfg.clustering.rangeBased.azimuthGateSize
+               << " rad, elevationGate=" << cfg.clustering.rangeBased.elevationGateSize << " rad)";
+            break;
+        case ClusterMethod::RangeStrengthBased:
+            os << "RangeStrength (rangeGate=" << cfg.clustering.rangeStrength.rangeGateSize
+               << " m, azimuthGate=" << cfg.clustering.rangeStrength.azimuthGateSize
+               << " rad, elevationGate=" << cfg.clustering.rangeStrength.elevationGateSize
+               << " rad, strengthGate=" << cfg.clustering.rangeStrength.strengthGateSize << ")";
+            break;
+        default: os << "unknown"; break;
+    }
+    os << "\n";
+
+    // Association
+    os << "Association: ";
+    switch (cfg.association.method) {
+        case AssociationMethod::Mahalanobis:
+            os << "Mahalanobis (gatingThreshold=" << cfg.association.gatingThreshold
+               << ", distanceThreshold=" << cfg.association.mahalanobis.distanceThreshold << ")";
+            break;
+        case AssociationMethod::GNN:
+            os << "GNN (gatingThreshold=" << cfg.association.gatingThreshold
+               << ", costThreshold=" << cfg.association.gnn.costThreshold << ")";
+            break;
+        case AssociationMethod::JPDA:
+            os << "JPDA (gatingThreshold=" << cfg.association.gatingThreshold
+               << ", gateSize=" << cfg.association.jpda.gateSize
+               << ", clutterDensity=" << cfg.association.jpda.clutterDensity
+               << ", detectionProbability=" << cfg.association.jpda.detectionProbability << ")";
+            break;
+        default: os << "unknown"; break;
+    }
+    os << "\n";
+
+    // Prediction (IMM)
+    os << "Prediction: IMM filter, numModels=" << cfg.prediction.imm.numModels
+       << " (CV, CA1, CA2, CTR1, CTR2); "
+       << "CV processNoiseStd=" << cfg.prediction.cv.processNoiseStd << "; "
+       << "CA1 processNoiseStd=" << cfg.prediction.ca1.processNoiseStd << " accelDecayRate=" << cfg.prediction.ca1.accelDecayRate << "; "
+       << "CA2 processNoiseStd=" << cfg.prediction.ca2.processNoiseStd << "; "
+       << "CTR1 processNoiseStd=" << cfg.prediction.ctr1.processNoiseStd << " turnRateNoiseStd=" << cfg.prediction.ctr1.turnRateNoiseStd << "; "
+       << "CTR2 processNoiseStd=" << cfg.prediction.ctr2.processNoiseStd << "\n";
+
+    // Track management
+    os << "Track initiation: " << cfg.trackManagement.initiation.method
+       << " m=" << cfg.trackManagement.initiation.m << " n=" << cfg.trackManagement.initiation.n
+       << ", maxInitiationRange=" << cfg.trackManagement.initiation.maxInitiationRange
+       << " m, velocityGate=" << cfg.trackManagement.initiation.velocityGate << "\n";
+    os << "Track maintenance: confirmHits=" << cfg.trackManagement.maintenance.confirmHits
+       << ", coastingLimit=" << cfg.trackManagement.maintenance.coastingLimit
+       << ", deleteAfterMisses=" << cfg.trackManagement.maintenance.deleteAfterMisses
+       << ", qualityDecayRate=" << cfg.trackManagement.maintenance.qualityDecayRate
+       << ", minQualityThreshold=" << cfg.trackManagement.maintenance.minQualityThreshold << "\n";
+    os << "Track deletion: maxCoastingDwells=" << cfg.trackManagement.deletion.maxCoastingDwells
+       << ", minQuality=" << cfg.trackManagement.deletion.minQuality
+       << ", maxRange=" << cfg.trackManagement.deletion.maxRange << " m\n";
+
+    // Preprocessing (brief)
+    os << "Preprocessing: range [" << cfg.preprocessing.minRange << "," << cfg.preprocessing.maxRange
+       << "] m, SNR [" << cfg.preprocessing.minSNR << "," << cfg.preprocessing.maxSNR
+       << "], RCS [" << cfg.preprocessing.minRCS << "," << cfg.preprocessing.maxRCS << "] dB\n";
+
+    os << "==========================================\n";
+    return os.str();
+}
+
 } // namespace cuas
