@@ -51,9 +51,17 @@ bool BinaryLogger::open(const std::string& directory, const std::string& prefix,
     file_.open(fname.str(), std::ios::binary | std::ios::out);
     if (!file_.is_open()) return false;
 
-    // If run info provided, write as first record to .bin (so extractor can show it)
-    if (!runInfo.empty())
-        writeRecord(LogRecordType::RunInfo, 0, runInfo.data(), static_cast<uint32_t>(runInfo.size()));
+    // If run info provided, write as first record to .bin (so extractor can show it).
+    // Write directly to file_ without calling writeRecord() to avoid deadlock (we already hold mutex_).
+    if (!runInfo.empty()) {
+        LogRecordHeader hdr;
+        hdr.magic       = LOG_MAGIC;
+        hdr.recordType  = static_cast<uint32_t>(LogRecordType::RunInfo);
+        hdr.timestamp   = 0;
+        hdr.payloadSize = static_cast<uint32_t>(runInfo.size());
+        file_.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+        file_.write(runInfo.data(), static_cast<std::streamsize>(runInfo.size()));
+    }
 
     std::string combinedPath = fname.str();
     size_t dot = combinedPath.rfind(".bin");
