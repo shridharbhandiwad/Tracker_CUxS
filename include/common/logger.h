@@ -35,10 +35,13 @@ public:
 private:
     void writeRecord(LogRecordType type, Timestamp ts, const void* data, uint32_t size);
     void writeRecord(LogRecordType type, Timestamp ts, const std::vector<uint8_t>& data);
+    void writeCombinedLine(const char* step, Timestamp ts, const std::string& payload);
 
     std::ofstream file_;
+    std::ofstream combinedDat_;
     std::mutex    mutex_;
     bool          open_ = false;
+    uint32_t      currentDwell_ = 0;
 };
 
 class ConsoleLogger {

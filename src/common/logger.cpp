@@ -1,4 +1,5 @@
 #include "common/logger.h"
+#include "common/constants.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -49,6 +50,17 @@ bool BinaryLogger::open(const std::string& directory, const std::string& prefix)
     file_.open(fname.str(), std::ios::binary | std::ios::out);
     if (!file_.is_open()) return false;
 
+    std::string combinedPath = fname.str();
+    size_t dot = combinedPath.rfind(".bin");
+    if (dot != std::string::npos)
+        combinedPath = combinedPath.substr(0, dot) + "_combined_track_flow.dat";
+    else
+        combinedPath += "_combined_track_flow.dat";
+    combinedDat_.open(combinedPath, std::ios::out);
+    if (combinedDat_.is_open()) {
+        combinedDat_ << "step\tdwell\ttimestamp\tpayload\n";
+    }
+
     open_ = true;
     LOG_INFO("BinaryLogger", "Opened log file: %s", fname.str().c_str());
     return true;
@@ -59,11 +71,21 @@ void BinaryLogger::close() {
     if (open_) {
         file_.flush();
         file_.close();
+        if (combinedDat_.is_open()) {
+            combinedDat_.flush();
+            combinedDat_.close();
+        }
         open_ = false;
     }
 }
 
 bool BinaryLogger::isOpen() const { return open_; }
+
+void BinaryLogger::writeCombinedLine(const char* step, Timestamp ts, const std::string& payload) {
+    if (!combinedDat_.is_open()) return;
+    std::lock_guard<std::mutex> lock(mutex_);
+    combinedDat_ << step << "\t" << currentDwell_ << "\t" << ts << "\t" << payload << "\n";
+}
 
 void BinaryLogger::writeRecord(LogRecordType type, Timestamp ts,
                                 const void* data, uint32_t size) {
@@ -88,6 +110,7 @@ void BinaryLogger::writeRecord(LogRecordType type, Timestamp ts,
 }
 
 void BinaryLogger::logRawDetections(Timestamp ts, const SPDetectionMessage& msg) {
+    currentDwell_ = msg.dwellCount;
     std::vector<uint8_t> buf;
     uint32_t n = msg.numDetections;
     size_t sz = sizeof(uint32_t) * 3 + sizeof(Timestamp) + n * sizeof(Detection);
@@ -103,6 +126,14 @@ void BinaryLogger::logRawDetections(Timestamp ts, const SPDetectionMessage& msg)
         p += sizeof(Detection);
     }
     writeRecord(LogRecordType::RawDetection, ts, buf);
+    for (uint32_t i = 0; i < n; ++i) {
+        const Detection& d = msg.detections[i];
+        std::ostringstream pl;
+        pl << std::fixed << std::setprecision(4) << n << "\t" << i << "\t" << d.range
+           << "\t" << (d.azimuth * RAD2DEG) << "\t" << (d.elevation * RAD2DEG)
+           << "\t" << d.strength << "\t" << d.noise << "\t" << d.snr << "\t" << d.rcs << "\t" << d.microDoppler;
+        writeCombinedLine("raw", ts, pl.str());
+    }
 }
 
 void BinaryLogger::logPreprocessed(Timestamp ts, const std::vector<Detection>& dets) {
@@ -115,6 +146,14 @@ void BinaryLogger::logPreprocessed(Timestamp ts, const std::vector<Detection>& d
         p += sizeof(Detection);
     }
     writeRecord(LogRecordType::Preprocessed, ts, buf);
+    for (uint32_t i = 0; i < n; ++i) {
+        const Detection& d = dets[i];
+        std::ostringstream pl;
+        pl << std::fixed << std::setprecision(4) << n << "\t" << i << "\t" << d.range
+           << "\t" << (d.azimuth * RAD2DEG) << "\t" << (d.elevation * RAD2DEG)
+           << "\t" << d.strength << "\t" << d.noise << "\t" << d.snr << "\t" << d.rcs << "\t" << d.microDoppler;
+        writeCombinedLine("preprocessed", ts, pl.str());
+    }
 }
 
 void BinaryLogger::logClustered(Timestamp ts, const std::vector<Cluster>& clusters) {
@@ -148,6 +187,14 @@ void BinaryLogger::logClustered(Timestamp ts, const std::vector<Cluster>& cluste
         }
     }
     writeRecord(LogRecordType::Clustered, ts, buf);
+    for (const auto& c : clusters) {
+        std::ostringstream pl;
+        pl << std::fixed << std::setprecision(4) << c.clusterId << "\t" << c.numDetections
+           << "\t" << c.range << "\t" << (c.azimuth * RAD2DEG) << "\t" << (c.elevation * RAD2DEG)
+           << "\t" << c.strength << "\t" << c.snr << "\t" << c.rcs << "\t" << c.microDoppler
+           << "\t" << c.cartesian.x << "\t" << c.cartesian.y << "\t" << c.cartesian.z;
+        writeCombinedLine("clustering", ts, pl.str());
+    }
 }
 
 void BinaryLogger::logPredicted(Timestamp ts, uint32_t trackId, const StateVector& state) {
@@ -158,6 +205,10 @@ void BinaryLogger::logPredicted(Timestamp ts, uint32_t trackId, const StateVecto
         std::memcpy(p, &state[i], 8); p += 8;
     }
     writeRecord(LogRecordType::Predicted, ts, buf);
+    std::ostringstream pl;
+    pl << std::fixed << std::setprecision(4) << trackId;
+    for (int i = 0; i < STATE_DIM; ++i) pl << "\t" << state[i];
+    writeCombinedLine("prediction", ts, pl.str());
 }
 
 void BinaryLogger::logAssociated(Timestamp ts, uint32_t trackId,
@@ -168,6 +219,9 @@ void BinaryLogger::logAssociated(Timestamp ts, uint32_t trackId,
     std::memcpy(p, &clusterId, 4); p += 4;
     std::memcpy(p, &distance, 8); p += 8;
     writeRecord(LogRecordType::Associated, ts, buf);
+    std::ostringstream pl;
+    pl << std::fixed << std::setprecision(4) << trackId << "\t" << clusterId << "\t" << distance;
+    writeCombinedLine("association", ts, pl.str());
 }
 
 void BinaryLogger::logTrackInitiated(Timestamp ts, uint32_t trackId,
@@ -179,6 +233,10 @@ void BinaryLogger::logTrackInitiated(Timestamp ts, uint32_t trackId,
         std::memcpy(p, &state[i], 8); p += 8;
     }
     writeRecord(LogRecordType::TrackInitiated, ts, buf);
+    std::ostringstream pl;
+    pl << std::fixed << std::setprecision(4) << trackId;
+    for (int i = 0; i < STATE_DIM; ++i) pl << "\t" << state[i];
+    writeCombinedLine("track_init", ts, pl.str());
 }
 
 void BinaryLogger::logTrackUpdated(Timestamp ts, uint32_t trackId,
@@ -192,14 +250,27 @@ void BinaryLogger::logTrackUpdated(Timestamp ts, uint32_t trackId,
         std::memcpy(p, &state[i], 8); p += 8;
     }
     writeRecord(LogRecordType::TrackUpdated, ts, buf);
+    std::ostringstream pl;
+    pl << std::fixed << std::setprecision(4) << trackId << "\t" << s;
+    for (int i = 0; i < STATE_DIM; ++i) pl << "\t" << state[i];
+    writeCombinedLine("update", ts, pl.str());
 }
 
 void BinaryLogger::logTrackDeleted(Timestamp ts, uint32_t trackId) {
     writeRecord(LogRecordType::TrackDeleted, ts, &trackId, sizeof(uint32_t));
+    writeCombinedLine("track_delete", ts, std::to_string(trackId));
 }
 
 void BinaryLogger::logTrackSent(Timestamp ts, const TrackUpdateMessage& msg) {
     writeRecord(LogRecordType::TrackSent, ts, &msg, sizeof(TrackUpdateMessage));
+    std::ostringstream pl;
+    pl << std::fixed << std::setprecision(4) << msg.trackId << "\t" << static_cast<int>(msg.status)
+       << "\t" << static_cast<int>(msg.classification) << "\t" << msg.range
+       << "\t" << (msg.azimuth * RAD2DEG) << "\t" << (msg.elevation * RAD2DEG)
+       << "\t" << msg.rangeRate << "\t" << msg.x << "\t" << msg.y << "\t" << msg.z
+       << "\t" << msg.vx << "\t" << msg.vy << "\t" << msg.vz
+       << "\t" << msg.trackQuality << "\t" << msg.hitCount << "\t" << msg.missCount << "\t" << msg.age;
+    writeCombinedLine("sender", ts, pl.str());
 }
 
 bool BinaryLogger::readHeader(std::ifstream& in, LogRecordHeader& hdr) {
