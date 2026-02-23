@@ -145,6 +145,10 @@ target_link_libraries(display_module PRIVATE cuas_common)
 
 add_executable(log_extractor simulators/log_extractor/log_extractor.cpp)
 target_link_libraries(log_extractor PRIVATE cuas_common)
+# GCC 8 (e.g. MinGW) needs explicit std::filesystem link
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_libraries(log_extractor PRIVATE stdc++fs)
+endif()
 
 # ---------------------------------------------------------------------------
 # Install

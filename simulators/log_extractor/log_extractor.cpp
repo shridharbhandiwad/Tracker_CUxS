@@ -349,17 +349,18 @@ int datMode(const std::string& filename, const std::string& outDir) {
         return 1;
     }
 
-    // Create output directory
+    // Create output directory (use filesystem::path for Windows compatibility)
+    std::filesystem::path outPath(outDir);
     std::error_code ec;
-    std::filesystem::create_directories(outDir, ec);
+    std::filesystem::create_directories(outPath, ec);
     if (ec) {
-        std::cerr << "ERROR: Cannot create output directory: " << outDir << std::endl;
+        std::cerr << "ERROR: Cannot create output directory: " << outDir << " - " << ec.message() << std::endl;
         return 1;
     }
 
     // Open per-stage output files
-    auto openDat = [&](const std::string& name) {
-        return std::ofstream(outDir + "/" + name, std::ios::out | std::ios::trunc);
+    auto openDat = [&outPath](const std::string& name) {
+        return std::ofstream((outPath / name).string(), std::ios::out | std::ios::trunc);
     };
 
     std::ofstream fRaw     = openDat("raw_detections.dat");
@@ -547,6 +548,9 @@ int datMode(const std::string& filename, const std::string& outDir) {
 }
 
 int main(int argc, char* argv[]) {
+    std::cout.flush();
+    std::cerr.flush();
+
     if (argc < 2) {
         std::cerr << "Counter-UAS Radar Tracker - Log Extractor & Replay Tool" << std::endl;
         std::cerr << std::endl;
@@ -559,10 +563,13 @@ int main(int argc, char* argv[]) {
         std::cerr << "  dat [output_dir]               - Export per-stage .dat files" << std::endl;
         std::cerr << std::endl;
         std::cerr << "Examples:" << std::endl;
-        std::cerr << "  " << argv[0] << " tracker_20260101_120000.bin extract verbose" << std::endl;
-        std::cerr << "  " << argv[0] << " tracker_20260101_120000.bin replay 127.0.0.1 50000 2.0" << std::endl;
-        std::cerr << "  " << argv[0] << " tracker_20260101_120000.bin csv > tracks.csv" << std::endl;
-        std::cerr << "  " << argv[0] << " tracker_20260101_120000.bin dat ./exported_data" << std::endl;
+        std::cerr << "  " << argv[0] << " tracker_log.bin extract" << std::endl;
+        std::cerr << "  " << argv[0] << " tracker_log.bin extract verbose" << std::endl;
+        std::cerr << "  " << argv[0] << " tracker_log.bin replay 127.0.0.1 50000 2.0" << std::endl;
+        std::cerr << "  " << argv[0] << " tracker_log.bin csv > tracks.csv" << std::endl;
+        std::cerr << "  " << argv[0] << " tracker_log.bin dat ./exported_data" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "Note: Provide a log file path (e.g. ./logs/tracker_log.bin) from a previous tracker run." << std::endl;
         return 1;
     }
 
@@ -573,6 +580,13 @@ int main(int argc, char* argv[]) {
 
     std::string filename = argv[1];
     std::string mode     = (argc > 2) ? argv[2] : "extract";
+
+    // Check log file exists before proceeding
+    if (!std::ifstream(filename, std::ios::binary).good()) {
+        std::cerr << "ERROR: Cannot open log file: " << filename << std::endl;
+        std::cerr << "       Check the path and that the tracker has created a log (logEnabled in config)." << std::endl;
+        return 1;
+    }
 
     if (mode == "extract") {
         bool verbose = (argc > 3 && std::string(argv[3]) == "verbose");
