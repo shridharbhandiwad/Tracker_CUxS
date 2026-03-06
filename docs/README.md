@@ -1,4 +1,12 @@
-# Technical Design Documentation (PowerPoint)
+# Technical Design Documentation
+
+## Technical Document (SRS-9-20)
+
+A technical document aligned with the **SRS-9-20** specification is available in Markdown:
+
+- **`docs/Technical-Document-SRS-9-20.md`** — Technology stack (Qt, Windows/Linux, Python analytics), architecture, components, build/deploy, and interfaces.
+
+## Technical Design Deck (PowerPoint)
 
 This repository includes a generated Technical Design Deck (TDD) in PowerPoint format:
 
