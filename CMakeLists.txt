@@ -151,6 +151,18 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 # ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+enable_testing()
+
+add_executable(test_log_som_eom tests/test_log_som_eom.cpp)
+target_link_libraries(test_log_som_eom PRIVATE cuas_common)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_libraries(test_log_som_eom PRIVATE stdc++fs)
+endif()
+add_test(NAME LogSomEomFraming COMMAND test_log_som_eom)
+
+# ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
 install(TARGETS cuas_tracker dsp_injector display_module log_extractor

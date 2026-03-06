@@ -51,6 +51,8 @@ bool BinaryLogger::open(const std::string& directory, const std::string& prefix,
     file_.open(fname.str(), std::ios::binary | std::ios::out);
     if (!file_.is_open()) return false;
 
+    logPath_ = fname.str();
+
     // If run info provided, write as first record to .bin (so extractor can show it).
     // Write directly to file_ without calling writeRecord() to avoid deadlock (we already hold mutex_).
     if (!runInfo.empty()) {
@@ -61,6 +63,9 @@ bool BinaryLogger::open(const std::string& directory, const std::string& prefix,
         hdr.payloadSize = static_cast<uint32_t>(runInfo.size());
         file_.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
         file_.write(runInfo.data(), static_cast<std::streamsize>(runInfo.size()));
+        // EOM sentinel after RunInfo payload
+        const uint32_t eom = LOG_EOM;
+        file_.write(reinterpret_cast<const char*>(&eom), sizeof(eom));
     }
 
     std::string combinedPath = fname.str();
@@ -125,6 +130,9 @@ void BinaryLogger::writeRecord(LogRecordType type, Timestamp ts,
     if (size > 0 && data) {
         file_.write(reinterpret_cast<const char*>(data), size);
     }
+    // EOM sentinel — always written, even for zero-byte payloads
+    const uint32_t eom = LOG_EOM;
+    file_.write(reinterpret_cast<const char*>(&eom), sizeof(eom));
 }
 
 void BinaryLogger::writeRecord(LogRecordType type, Timestamp ts,
@@ -320,10 +328,52 @@ bool BinaryLogger::readHeader(std::ifstream& in, LogRecordHeader& hdr) {
 
 bool BinaryLogger::readPayload(std::ifstream& in, uint32_t size,
                                 std::vector<uint8_t>& data) {
+    // Guard against a corrupted payloadSize that would cause a huge allocation.
+    if (size > LOG_MAX_PAYLOAD) return false;
+
     data.resize(size);
-    in.read(reinterpret_cast<char*>(data.data()), size);
-    return in.good();
+    if (size > 0) {
+        in.read(reinterpret_cast<char*>(data.data()), size);
+        if (!in.good()) return false;
+    }
+
+    // Verify the EOM sentinel that follows every record payload.
+    uint32_t eom = 0;
+    in.read(reinterpret_cast<char*>(&eom), sizeof(eom));
+    return in.good() && (eom == LOG_EOM);
 }
+
+bool BinaryLogger::resyncToNextRecord(std::ifstream& in) {
+    // LOG_MAGIC (0xCAFEBABE) as it appears in the file (little-endian byte order).
+    const uint8_t magic_le[4] = {
+        static_cast<uint8_t>(LOG_MAGIC & 0xFFu),
+        static_cast<uint8_t>((LOG_MAGIC >> 8)  & 0xFFu),
+        static_cast<uint8_t>((LOG_MAGIC >> 16) & 0xFFu),
+        static_cast<uint8_t>((LOG_MAGIC >> 24) & 0xFFu)
+    };
+
+    // Slide a 4-byte window through the stream one byte at a time.
+    // None of the four bytes of LOG_MAGIC repeat within the pattern, so a simple
+    // greedy match is sufficient (no KMP partial-match table needed).
+    int matched = 0;
+    char byte;
+    while (in.read(&byte, 1)) {
+        const uint8_t b = static_cast<uint8_t>(byte);
+        if (b == magic_le[matched]) {
+            ++matched;
+            if (matched == 4) {
+                // Rewind so readHeader() reads from the SOM sentinel.
+                in.seekg(-4, std::ios::cur);
+                return in.good();
+            }
+        } else {
+            matched = (b == magic_le[0]) ? 1 : 0;
+        }
+    }
+    return false;
+}
+
+std::string BinaryLogger::getLogPath() const { return logPath_; }
 
 // ---------------------------------------------------------------------------
 // ConsoleLogger
