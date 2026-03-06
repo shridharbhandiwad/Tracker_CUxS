@@ -32,7 +32,20 @@ public:
 
     // Read interface for extractor
     static bool readHeader(std::ifstream& in, LogRecordHeader& hdr);
+
+    // Read payloadSize bytes then verify the trailing EOM marker.
+    // Returns false if an I/O error occurs, payloadSize exceeds LOG_MAX_PAYLOAD,
+    // or the EOM sentinel is absent / corrupted.
     static bool readPayload(std::ifstream& in, uint32_t size, std::vector<uint8_t>& data);
+
+    // Scan forward from the current file position looking for the next LOG_MAGIC
+    // SOM sentinel.  Leaves the stream positioned at the start of that sentinel
+    // so the caller can immediately call readHeader().
+    // Returns false if the end of file is reached without finding a sentinel.
+    static bool resyncToNextRecord(std::ifstream& in);
+
+    // Returns the full path of the currently open (or last opened) .bin file.
+    std::string getLogPath() const;
 
 private:
     void writeRecord(LogRecordType type, Timestamp ts, const void* data, uint32_t size);
@@ -44,6 +57,7 @@ private:
     std::mutex    mutex_;
     bool          open_ = false;
     uint32_t      currentDwell_ = 0;
+    std::string   logPath_;
 };
 
 class ConsoleLogger {

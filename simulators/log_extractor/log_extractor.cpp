@@ -179,14 +179,29 @@ int extractMode(const std::string& filename, bool verbose) {
     std::cout << "=== Log Extraction: " << filename << " ===" << std::endl;
     std::cout << std::string(80, '-') << std::endl;
 
-    while (cuas::BinaryLogger::readHeader(file, hdr) && g_running.load()) {
+    uint64_t corruptedRecords = 0;
+    while (g_running.load()) {
+        if (!cuas::BinaryLogger::readHeader(file, hdr)) {
+            if (file.eof()) break;
+            // Bad SOM or I/O error — attempt to resync to the next record.
+            if (!cuas::BinaryLogger::resyncToNextRecord(file)) break;
+            ++corruptedRecords;
+            continue;
+        }
+
         std::vector<uint8_t> payload;
-        if (!cuas::BinaryLogger::readPayload(file, hdr.payloadSize, payload)) break;
+        if (!cuas::BinaryLogger::readPayload(file, hdr.payloadSize, payload)) {
+            // Missing or wrong EOM — attempt to resync and continue.
+            if (!cuas::BinaryLogger::resyncToNextRecord(file)) break;
+            ++corruptedRecords;
+            continue;
+        }
 
         auto type = static_cast<cuas::LogRecordType>(hdr.recordType);
         stats.counts[type]++;
         stats.totalRecords++;
-        stats.totalBytes += sizeof(hdr) + hdr.payloadSize;
+        // Each record on disk: header + payload + EOM (4 bytes)
+        stats.totalBytes += sizeof(hdr) + hdr.payloadSize + sizeof(uint32_t);
 
         if (stats.firstTs == 0) stats.firstTs = hdr.timestamp;
         stats.lastTs = hdr.timestamp;
@@ -194,6 +209,10 @@ int extractMode(const std::string& filename, bool verbose) {
         if (verbose) {
             printExtractedRecord(hdr, payload);
         }
+    }
+    if (corruptedRecords > 0) {
+        std::cerr << "WARNING: " << corruptedRecords
+                  << " corrupted/truncated record(s) skipped.\n";
     }
 
     std::cout << std::string(80, '-') << std::endl;
@@ -237,9 +256,17 @@ int replayMode(const std::string& filename, const std::string& targetIp,
     cuas::Timestamp prevTs = 0;
     uint64_t sentCount = 0;
 
-    while (cuas::BinaryLogger::readHeader(file, hdr) && g_running.load()) {
+    while (g_running.load()) {
+        if (!cuas::BinaryLogger::readHeader(file, hdr)) {
+            if (file.eof()) break;
+            if (!cuas::BinaryLogger::resyncToNextRecord(file)) break;
+            continue;
+        }
         std::vector<uint8_t> payload;
-        if (!cuas::BinaryLogger::readPayload(file, hdr.payloadSize, payload)) break;
+        if (!cuas::BinaryLogger::readPayload(file, hdr.payloadSize, payload)) {
+            if (!cuas::BinaryLogger::resyncToNextRecord(file)) break;
+            continue;
+        }
 
         auto type = static_cast<cuas::LogRecordType>(hdr.recordType);
 
@@ -306,9 +333,17 @@ int csvMode(const std::string& filename) {
               << "range_rate,x,y,z,vx,vy,vz,quality,hits,misses,age,status,class"
               << std::endl;
 
-    while (cuas::BinaryLogger::readHeader(file, hdr) && g_running.load()) {
+    while (g_running.load()) {
+        if (!cuas::BinaryLogger::readHeader(file, hdr)) {
+            if (file.eof()) break;
+            if (!cuas::BinaryLogger::resyncToNextRecord(file)) break;
+            continue;
+        }
         std::vector<uint8_t> payload;
-        if (!cuas::BinaryLogger::readPayload(file, hdr.payloadSize, payload)) break;
+        if (!cuas::BinaryLogger::readPayload(file, hdr.payloadSize, payload)) {
+            if (!cuas::BinaryLogger::resyncToNextRecord(file)) break;
+            continue;
+        }
 
         auto type = static_cast<cuas::LogRecordType>(hdr.recordType);
 
@@ -399,11 +434,22 @@ int datMode(const std::string& filename, const std::string& outDir) {
 
     cuas::LogRecordHeader hdr;
     uint64_t records = 0;
+    uint64_t corruptedDat = 0;
     uint32_t currentDwell = 0;
 
-    while (cuas::BinaryLogger::readHeader(file, hdr) && g_running.load()) {
+    while (g_running.load()) {
+        if (!cuas::BinaryLogger::readHeader(file, hdr)) {
+            if (file.eof()) break;
+            if (!cuas::BinaryLogger::resyncToNextRecord(file)) break;
+            ++corruptedDat;
+            continue;
+        }
         std::vector<uint8_t> payload;
-        if (!cuas::BinaryLogger::readPayload(file, hdr.payloadSize, payload)) break;
+        if (!cuas::BinaryLogger::readPayload(file, hdr.payloadSize, payload)) {
+            if (!cuas::BinaryLogger::resyncToNextRecord(file)) break;
+            ++corruptedDat;
+            continue;
+        }
         ++records;
 
         auto type = static_cast<cuas::LogRecordType>(hdr.recordType);
@@ -628,6 +674,8 @@ int datMode(const std::string& filename, const std::string& outDir) {
     std::cout << "  predictions.dat     associations.dat" << std::endl;
     std::cout << "  tracks_initiated.dat  tracks_updated.dat  tracks_deleted.dat  tracks_sent.dat" << std::endl;
     std::cout << "  combined_track_flow.dat (all steps in dwell-wise order)" << std::endl;
+    if (corruptedDat > 0)
+        std::cerr << "WARNING: " << corruptedDat << " corrupted/truncated record(s) skipped.\n";
     return 0;
 }
 

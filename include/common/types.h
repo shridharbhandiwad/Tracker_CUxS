@@ -232,8 +232,32 @@ enum class LogRecordType : uint32_t {
     RunInfo        = 9
 };
 
+// Start-of-Message sentinel written at the beginning of every log record header.
 static constexpr uint32_t LOG_MAGIC = 0xCAFEBABE;
 
+// End-of-Message sentinel written immediately after every record's payload.
+// Its presence is verified on read to detect truncation or data corruption.
+static constexpr uint32_t LOG_EOM = 0xDEADBEEF;
+
+// Maximum accepted payload size (64 MiB).  Guards against reading an enormous
+// allocation when payloadSize itself is corrupted.
+static constexpr uint32_t LOG_MAX_PAYLOAD = 64u * 1024u * 1024u;
+
+// ---------------------------------------------------------------------------
+// Binary log record wire layout (little-endian)
+//
+//  ┌─────────────────────────────────────────────────────┐
+//  │  SOM   magic       (4 B)  = LOG_MAGIC  0xCAFEBABE  │
+//  │        recordType  (4 B)  LogRecordType enum value  │
+//  │        timestamp   (8 B)  microseconds since epoch  │
+//  │        payloadSize (4 B)  bytes that follow          │
+//  ├─────────────────────────────────────────────────────┤
+//  │  PAYLOAD           (payloadSize bytes)               │
+//  ├─────────────────────────────────────────────────────┤
+//  │  EOM   eom         (4 B)  = LOG_EOM    0xDEADBEEF  │
+//  └─────────────────────────────────────────────────────┘
+//
+// ---------------------------------------------------------------------------
 #pragma pack(push, 1)
 struct LogRecordHeader {
     uint32_t  magic       = LOG_MAGIC;

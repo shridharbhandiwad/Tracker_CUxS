@@ -90,10 +90,27 @@ module CounterUAS {
     };
 
     /* ================================================================
-     * Log Record Header
-     * Prefixed to every binary log entry
+     * Binary Log Record Wire Format
+     *
+     * Every record written to a .bin log file has the layout below.
+     * All multi-byte fields are little-endian.
+     *
+     *  ┌──────────────────────────────────────────────────────────┐
+     *  │ SOM  magic        (4 B) = LOG_MAGIC  0xCAFEBABE          │
+     *  │      recordType   (4 B) LogRecordType enum               │
+     *  │      timestamp    (8 B) microseconds since epoch         │
+     *  │      payloadSize  (4 B) bytes that follow this header    │
+     *  ├──────────────────────────────────────────────────────────┤
+     *  │ PAYLOAD           (payloadSize bytes)                    │
+     *  ├──────────────────────────────────────────────────────────┤
+     *  │ EOM  eom          (4 B) = LOG_EOM    0xDEADBEEF          │
+     *  └──────────────────────────────────────────────────────────┘
+     *
+     * The EOM sentinel enables reliable corruption detection and
+     * stream re-synchronisation in the log_extractor tool.
      * ================================================================ */
-    const unsigned long LOG_MAGIC = 0xCAFEBABE;
+    const unsigned long LOG_MAGIC = 0xCAFEBABE;  // Start-of-Message
+    const unsigned long LOG_EOM   = 0xDEADBEEF;  // End-of-Message
 
     enum LogRecordType {
         LOG_RAW_DETECTION,
@@ -104,14 +121,16 @@ module CounterUAS {
         LOG_TRACK_INITIATED,
         LOG_TRACK_UPDATED,
         LOG_TRACK_DELETED,
-        LOG_TRACK_SENT
+        LOG_TRACK_SENT,
+        LOG_RUN_INFO
     };
 
     struct LogRecordHeader {
-        unsigned long       magic;          // LOG_MAGIC
+        unsigned long       magic;          // LOG_MAGIC (SOM sentinel)
         unsigned long       recordType;     // LogRecordType
         unsigned long long  timestamp;      // microseconds since epoch
-        unsigned long       payloadSize;    // bytes following this header
+        unsigned long       payloadSize;    // bytes between header and EOM
+        // Immediately after payloadSize bytes: LOG_EOM (4 B)
     };
 
 };
