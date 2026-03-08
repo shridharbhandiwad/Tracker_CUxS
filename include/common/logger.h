@@ -28,7 +28,8 @@ public:
     void logTrackInitiated(Timestamp ts, uint32_t trackId, const StateVector& state);
     void logTrackUpdated(Timestamp ts, uint32_t trackId, const StateVector& state, TrackStatus status);
     void logTrackDeleted(Timestamp ts, uint32_t trackId);
-    void logTrackSent(Timestamp ts, const TrackUpdateMessage& msg);
+    // Accepts the IDL-generated wire type — all field access is via getters.
+    void logTrackSent(Timestamp ts, const CounterUAS::TrackUpdateMessage& msg);
 
     // Read interface for extractor
     static bool readHeader(std::ifstream& in, LogRecordHeader& hdr);

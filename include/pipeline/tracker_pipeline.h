@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/config.h"
+#include "common/dds_participant.h"
 #include "receiver/detection_receiver.h"
 #include "track_management/track_manager.h"
 #include "sender/track_sender.h"
@@ -28,9 +29,12 @@ private:
     void onDetectionReceived(const SPDetectionMessage& msg);
 
     TrackerConfig config_;
-    std::unique_ptr<DetectionReceiver> receiver_;
-    std::unique_ptr<TrackManager>      trackManager_;
-    std::unique_ptr<TrackSender>       sender_;
+
+    // One DDS participant shared by receiver and sender.
+    std::unique_ptr<CuasDdsParticipant> participant_;
+    std::unique_ptr<DetectionReceiver>  receiver_;
+    std::unique_ptr<TrackManager>       trackManager_;
+    std::unique_ptr<TrackSender>        sender_;
 
     std::queue<SPDetectionMessage> messageQueue_;
     std::mutex                     queueMutex_;

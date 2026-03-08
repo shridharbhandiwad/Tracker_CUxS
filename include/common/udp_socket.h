@@ -1,6 +1,18 @@
 #pragma once
 
-#include "types.h"
+/*
+ * Raw UDP socket wrapper.
+ *
+ * DDS (via FastRTPS) manages the actual transport for all IDL-typed messages.
+ * This class is retained for any non-DDS UDP usage (e.g., legacy tooling,
+ * raw binary log file transfers) and as the underlying transport layer that
+ * the DDS participant internally relies on.
+ *
+ * MessageSerializer has been removed: all serialization is now performed by
+ * the IDL-generated CDR code (messages.cxx / messagesPubSubTypes.cxx) and
+ * the DDS DataWriter/DataReader API in dds_participant.h.
+ */
+
 #include <string>
 #include <cstdint>
 #include <vector>
@@ -51,41 +63,6 @@ private:
     SocketHandle sock_;
     sockaddr_in  destAddr_;
     bool         destSet_ = false;
-};
-
-// Serialization helpers for network messages
-class MessageSerializer {
-public:
-    static std::vector<uint8_t> serialize(const SPDetectionMessage& msg);
-    static bool deserialize(const uint8_t* data, int len, SPDetectionMessage& msg);
-
-    static std::vector<uint8_t> serialize(const TrackUpdateMessage& msg);
-    static bool deserialize(const uint8_t* data, int len, TrackUpdateMessage& msg);
-
-    static std::vector<uint8_t> serializeTrackTable(
-        const std::vector<TrackUpdateMessage>& tracks, uint64_t timestamp);
-    static bool deserializeTrackTable(
-        const uint8_t* data, int len,
-        std::vector<TrackUpdateMessage>& tracks, uint64_t& timestamp);
-
-    // Pipeline intermediate stage messages (clusters, association, predicted)
-    static std::vector<uint8_t> serializeClusterTable(
-        const std::vector<ClusterWire>& clusters, uint64_t timestamp, uint32_t dwellCount);
-    static bool deserializeClusterTable(
-        const uint8_t* data, int len,
-        std::vector<ClusterWire>& clusters, uint64_t& timestamp, uint32_t& dwellCount);
-
-    static std::vector<uint8_t> serializeAssocTable(
-        const std::vector<AssocEntryWire>& entries, uint64_t timestamp);
-    static bool deserializeAssocTable(
-        const uint8_t* data, int len,
-        std::vector<AssocEntryWire>& entries, uint64_t& timestamp);
-
-    static std::vector<uint8_t> serializePredictedTable(
-        const std::vector<PredictedEntryWire>& entries, uint64_t timestamp);
-    static bool deserializePredictedTable(
-        const uint8_t* data, int len,
-        std::vector<PredictedEntryWire>& entries, uint64_t& timestamp);
 };
 
 } // namespace cuas

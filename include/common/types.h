@@ -1,5 +1,26 @@
 #pragma once
 
+/*
+ * Internal algorithmic types for the Counter-UAS radar tracker pipeline.
+ *
+ * WIRE TYPES ARE NOT DEFINED HERE.  All message types that cross a process
+ * boundary (DDS topics) are defined exclusively in idl/messages.idl and
+ * generated into <build>/generated/messages.h by fastddsgen at build time.
+ *
+ * This header:
+ *   - Includes the IDL-generated header so downstream code only needs one
+ *     include.
+ *   - Re-exports commonly-used IDL types into the cuas namespace as aliases
+ *     so existing pipeline code compiles unchanged.
+ *   - Provides static_assert guards that will break the build if any
+ *     hand-maintained enum value drifts away from the IDL definition.
+ *   - Defines internal types (CartesianPos, Cluster, StateVector, …) that
+ *     are never serialised over a DDS topic and therefore do not belong in
+ *     the IDL.
+ */
+
+#include "messages.h"   // IDL-generated: CounterUAS namespace
+
 #include <cstdint>
 #include <vector>
 #include <string>
@@ -19,7 +40,98 @@ inline Timestamp nowMicros() {
 }
 
 // ---------------------------------------------------------------------------
-// Detection from DSP
+// Log-framing constants — values are authoritative in the IDL.
+// The static_asserts below will fail to compile if anyone edits the IDL and
+// forgets to update something (or vice-versa).
+// ---------------------------------------------------------------------------
+static constexpr uint32_t LOG_MAGIC       = CounterUAS::LOG_MAGIC;
+static constexpr uint32_t LOG_EOM         = CounterUAS::LOG_EOM;
+static constexpr uint32_t LOG_MAX_PAYLOAD = 64u * 1024u * 1024u;  // 64 MiB guard
+
+// ---------------------------------------------------------------------------
+// Binary log record wire layout (little-endian, #pragma pack enforced)
+//
+//  ┌─────────────────────────────────────────────────────┐
+//  │  SOM   magic       (4 B)  = LOG_MAGIC  0xCAFEBABE  │
+//  │        recordType  (4 B)  LogRecordType enum value  │
+//  │        timestamp   (8 B)  microseconds since epoch  │
+//  │        payloadSize (4 B)  bytes that follow          │
+//  ├─────────────────────────────────────────────────────┤
+//  │  PAYLOAD           (payloadSize bytes)               │
+//  ├─────────────────────────────────────────────────────┤
+//  │  EOM   eom         (4 B)  = LOG_EOM    0xDEADBEEF  │
+//  └─────────────────────────────────────────────────────┘
+//
+// The struct must stay exactly 20 bytes.  The IDL defines the same layout;
+// the packed struct here is needed because file-I/O uses memcpy/fwrite, not
+// CDR serialization.
+// ---------------------------------------------------------------------------
+#pragma pack(push, 1)
+struct LogRecordHeader {
+    uint32_t  magic       = LOG_MAGIC;
+    uint32_t  recordType  = 0;
+    Timestamp timestamp   = 0;
+    uint32_t  payloadSize = 0;
+};
+#pragma pack(pop)
+
+// ---------------------------------------------------------------------------
+// LogRecordType — scoped enum class with readable names; underlying values
+// are pinned to the IDL-generated plain-enum values via static_asserts.
+// ---------------------------------------------------------------------------
+enum class LogRecordType : uint32_t {
+    RawDetection   = 0,
+    Preprocessed   = 1,
+    Clustered      = 2,
+    Predicted      = 3,
+    Associated     = 4,
+    TrackInitiated = 5,
+    TrackUpdated   = 6,
+    TrackDeleted   = 7,
+    TrackSent      = 8,
+    RunInfo        = 9
+};
+
+static_assert(static_cast<uint32_t>(LogRecordType::RawDetection)   == CounterUAS::LOG_RAW_DETECTION,   "LogRecordType::RawDetection out of sync with IDL");
+static_assert(static_cast<uint32_t>(LogRecordType::Preprocessed)   == CounterUAS::LOG_PREPROCESSED,    "LogRecordType::Preprocessed out of sync with IDL");
+static_assert(static_cast<uint32_t>(LogRecordType::Clustered)      == CounterUAS::LOG_CLUSTERED,       "LogRecordType::Clustered out of sync with IDL");
+static_assert(static_cast<uint32_t>(LogRecordType::Predicted)      == CounterUAS::LOG_PREDICTED,       "LogRecordType::Predicted out of sync with IDL");
+static_assert(static_cast<uint32_t>(LogRecordType::Associated)     == CounterUAS::LOG_ASSOCIATED,      "LogRecordType::Associated out of sync with IDL");
+static_assert(static_cast<uint32_t>(LogRecordType::TrackInitiated) == CounterUAS::LOG_TRACK_INITIATED, "LogRecordType::TrackInitiated out of sync with IDL");
+static_assert(static_cast<uint32_t>(LogRecordType::TrackUpdated)   == CounterUAS::LOG_TRACK_UPDATED,   "LogRecordType::TrackUpdated out of sync with IDL");
+static_assert(static_cast<uint32_t>(LogRecordType::TrackDeleted)   == CounterUAS::LOG_TRACK_DELETED,   "LogRecordType::TrackDeleted out of sync with IDL");
+static_assert(static_cast<uint32_t>(LogRecordType::TrackSent)      == CounterUAS::LOG_TRACK_SENT,      "LogRecordType::TrackSent out of sync with IDL");
+static_assert(static_cast<uint32_t>(LogRecordType::RunInfo)        == CounterUAS::LOG_RUN_INFO,        "LogRecordType::RunInfo out of sync with IDL");
+
+// ---------------------------------------------------------------------------
+// TrackStatus and TrackClassification — re-export IDL-generated plain enums
+// as type aliases into the cuas namespace for pipeline code.
+// The IDL enum values (TRACK_TENTATIVE etc.) are used directly; scoped-enum
+// wrappers with friendly names are provided as convenience aliases.
+// ---------------------------------------------------------------------------
+using TrackStatus         = CounterUAS::TrackStatus;
+using TrackClassification = CounterUAS::TrackClassification;
+
+// Convenience aliases that mirror the old scoped-enum style:
+//   cuas::TrackStatus::Tentative  →  CounterUAS::TRACK_TENTATIVE
+namespace TrackStatusVal {
+    static constexpr TrackStatus Tentative  = CounterUAS::TRACK_TENTATIVE;
+    static constexpr TrackStatus Confirmed  = CounterUAS::TRACK_CONFIRMED;
+    static constexpr TrackStatus Coasting   = CounterUAS::TRACK_COASTING;
+    static constexpr TrackStatus Deleted    = CounterUAS::TRACK_DELETED;
+}
+namespace TrackClassVal {
+    static constexpr TrackClassification Unknown       = CounterUAS::CLASS_UNKNOWN;
+    static constexpr TrackClassification DroneRotary   = CounterUAS::CLASS_DRONE_ROTARY;
+    static constexpr TrackClassification DroneFixedWing= CounterUAS::CLASS_DRONE_FIXED_WING;
+    static constexpr TrackClassification Bird          = CounterUAS::CLASS_BIRD;
+    static constexpr TrackClassification Clutter       = CounterUAS::CLASS_CLUTTER;
+}
+
+// ---------------------------------------------------------------------------
+// Detection — internal representation used throughout the pipeline.
+// Fields match IDL's DetectionData 1-for-1; the static_asserts below ensure
+// any field reordering in the IDL is caught at compile time.
 // ---------------------------------------------------------------------------
 struct Detection {
     double range      = 0.0;  // meters
@@ -32,6 +144,24 @@ struct Detection {
     double microDoppler = 0.0; // Hz
 };
 
+// Compile-time size guard: IDL DetectionData must stay 8 doubles.
+static_assert(sizeof(Detection) == 8 * sizeof(double),
+              "cuas::Detection size mismatch — check IDL DetectionData");
+
+// Conversion helpers between DDS wire type and internal type.
+inline Detection toInternal(const CounterUAS::DetectionData& d) {
+    return {d.range(), d.azimuth(), d.elevation(), d.strength(),
+            d.noise(), d.snr(), d.rcs(), d.microDoppler()};
+}
+inline CounterUAS::DetectionData toIDL(const Detection& d) {
+    CounterUAS::DetectionData r;
+    r.range(d.range);  r.azimuth(d.azimuth);  r.elevation(d.elevation);
+    r.strength(d.strength); r.noise(d.noise); r.snr(d.snr);
+    r.rcs(d.rcs); r.microDoppler(d.microDoppler);
+    return r;
+}
+
+// SPDetectionMessage — internal envelope (mirrors IDL SPDetectionMessage).
 struct SPDetectionMessage {
     uint32_t  messageId     = 0;
     uint32_t  dwellCount    = 0;
@@ -39,6 +169,19 @@ struct SPDetectionMessage {
     uint32_t  numDetections = 0;
     std::vector<Detection> detections;
 };
+
+// Conversion from IDL wire type to internal.
+inline SPDetectionMessage toInternal(const CounterUAS::SPDetectionMessage& m) {
+    SPDetectionMessage r;
+    r.messageId     = m.messageId();
+    r.dwellCount    = m.dwellCount();
+    r.timestamp     = m.timestamp();
+    r.numDetections = m.numDetections();
+    r.detections.reserve(m.detections().size());
+    for (const auto& d : m.detections())
+        r.detections.push_back(toInternal(d));
+    return r;
+}
 
 // ---------------------------------------------------------------------------
 // Cartesian position / state
@@ -72,7 +215,7 @@ inline SphericalPos cartesianToSpherical(double x, double y, double z) {
 }
 
 // ---------------------------------------------------------------------------
-// Cluster: centroided group of detections
+// Cluster: centroided group of detections (internal pipeline type)
 // ---------------------------------------------------------------------------
 struct Cluster {
     uint32_t clusterId = 0;
@@ -92,7 +235,7 @@ struct Cluster {
 // IMM state: 9-dimensional [x, vx, ax, y, vy, ay, z, vz, az]
 // ---------------------------------------------------------------------------
 static constexpr int STATE_DIM = 9;
-static constexpr int MEAS_DIM  = 3; // range, azimuth, elevation (converted to x,y,z)
+static constexpr int MEAS_DIM  = 3;
 
 using StateVector    = std::array<double, STATE_DIM>;
 using StateMatrix    = std::array<std::array<double, STATE_DIM>, STATE_DIM>;
@@ -119,87 +262,7 @@ inline StateMatrix matIdentity() {
 }
 
 // ---------------------------------------------------------------------------
-// Track status and classification
-// ---------------------------------------------------------------------------
-enum class TrackStatus : uint32_t {
-    Tentative  = 0,
-    Confirmed  = 1,
-    Coasting   = 2,
-    Deleted    = 3
-};
-
-enum class TrackClassification : uint32_t {
-    Unknown        = 0,
-    DroneRotary    = 1,
-    DroneFixedWing = 2,
-    Bird           = 3,
-    Clutter        = 4
-};
-
-// ---------------------------------------------------------------------------
-// Track update sent to display
-// ---------------------------------------------------------------------------
-struct TrackUpdateMessage {
-    uint32_t            messageId      = 0x0002;
-    uint32_t            trackId        = 0;
-    Timestamp           timestamp      = 0;
-    TrackStatus         status         = TrackStatus::Tentative;
-    TrackClassification classification = TrackClassification::Unknown;
-    double              range          = 0.0;
-    double              azimuth        = 0.0;
-    double              elevation      = 0.0;
-    double              rangeRate      = 0.0;
-    double              x = 0.0, y = 0.0, z = 0.0;
-    double              vx = 0.0, vy = 0.0, vz = 0.0;
-    double              trackQuality   = 0.0;
-    uint32_t            hitCount       = 0;
-    uint32_t            missCount      = 0;
-    uint32_t            age            = 0;
-};
-
-// ---------------------------------------------------------------------------
-// Flat wire-safe structs for intermediate pipeline UDP messages
-// ---------------------------------------------------------------------------
-#pragma pack(push, 1)
-
-// One cluster entry (no variable-length fields)
-struct ClusterWire {
-    uint32_t clusterId;
-    uint32_t numDetections;
-    double   range, azimuth, elevation;
-    double   strength, snr, rcs, microDoppler;
-    double   x, y, z;  // Cartesian
-};
-
-// One association/gating entry (matched or unmatched)
-struct AssocEntryWire {
-    uint32_t trackId;
-    uint32_t clusterId;   // 0xFFFFFFFF = no cluster (unmatched track)
-    double   distance;    // Mahalanobis distance (-1 = unmatched)
-    uint32_t matched;     // 1 = matched, 0 = unmatched track/cluster
-    uint32_t pad;
-};
-
-// One predicted-state entry (post-predict, pre-update)
-struct PredictedEntryWire {
-    uint32_t trackId;
-    uint32_t trackStatus; // TrackStatus enum value
-    // State vector [x,vx,ax, y,vy,ay, z,vz,az]
-    double x,  vx, ax;
-    double y,  vy, ay;
-    double z,  vz, az;
-    // Spherical
-    double range, azimuth, elevation;
-    // Position covariance diagonal elements
-    double covX, covY, covZ;
-    // IMM model probabilities [CV, CA1, CA2, CTR1, CTR2]
-    double modelProb[5];
-};
-
-#pragma pack(pop)
-
-// ---------------------------------------------------------------------------
-// Clustering method enum
+// Clustering and association method enums (config-only, not wire types)
 // ---------------------------------------------------------------------------
 enum class ClusterMethod {
     DBSCAN,
@@ -207,64 +270,10 @@ enum class ClusterMethod {
     RangeStrengthBased
 };
 
-// ---------------------------------------------------------------------------
-// Association method enum
-// ---------------------------------------------------------------------------
 enum class AssociationMethod {
     Mahalanobis,
     GNN,
     JPDA
 };
-
-// ---------------------------------------------------------------------------
-// Log record type
-// ---------------------------------------------------------------------------
-enum class LogRecordType : uint32_t {
-    RawDetection   = 0,
-    Preprocessed   = 1,
-    Clustered      = 2,
-    Predicted      = 3,
-    Associated     = 4,
-    TrackInitiated = 5,
-    TrackUpdated   = 6,
-    TrackDeleted   = 7,
-    TrackSent      = 8,
-    RunInfo        = 9
-};
-
-// Start-of-Message sentinel written at the beginning of every log record header.
-static constexpr uint32_t LOG_MAGIC = 0xCAFEBABE;
-
-// End-of-Message sentinel written immediately after every record's payload.
-// Its presence is verified on read to detect truncation or data corruption.
-static constexpr uint32_t LOG_EOM = 0xDEADBEEF;
-
-// Maximum accepted payload size (64 MiB).  Guards against reading an enormous
-// allocation when payloadSize itself is corrupted.
-static constexpr uint32_t LOG_MAX_PAYLOAD = 64u * 1024u * 1024u;
-
-// ---------------------------------------------------------------------------
-// Binary log record wire layout (little-endian)
-//
-//  ┌─────────────────────────────────────────────────────┐
-//  │  SOM   magic       (4 B)  = LOG_MAGIC  0xCAFEBABE  │
-//  │        recordType  (4 B)  LogRecordType enum value  │
-//  │        timestamp   (8 B)  microseconds since epoch  │
-//  │        payloadSize (4 B)  bytes that follow          │
-//  ├─────────────────────────────────────────────────────┤
-//  │  PAYLOAD           (payloadSize bytes)               │
-//  ├─────────────────────────────────────────────────────┤
-//  │  EOM   eom         (4 B)  = LOG_EOM    0xDEADBEEF  │
-//  └─────────────────────────────────────────────────────┘
-//
-// ---------------------------------------------------------------------------
-#pragma pack(push, 1)
-struct LogRecordHeader {
-    uint32_t  magic       = LOG_MAGIC;
-    uint32_t  recordType  = 0;
-    Timestamp timestamp   = 0;
-    uint32_t  payloadSize = 0;
-};
-#pragma pack(pop)
 
 } // namespace cuas

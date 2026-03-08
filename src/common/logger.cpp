@@ -53,8 +53,6 @@ bool BinaryLogger::open(const std::string& directory, const std::string& prefix,
 
     logPath_ = fname.str();
 
-    // If run info provided, write as first record to .bin (so extractor can show it).
-    // Write directly to file_ without calling writeRecord() to avoid deadlock (we already hold mutex_).
     if (!runInfo.empty()) {
         LogRecordHeader hdr;
         hdr.magic       = LOG_MAGIC;
@@ -63,7 +61,6 @@ bool BinaryLogger::open(const std::string& directory, const std::string& prefix,
         hdr.payloadSize = static_cast<uint32_t>(runInfo.size());
         file_.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
         file_.write(runInfo.data(), static_cast<std::streamsize>(runInfo.size()));
-        // EOM sentinel after RunInfo payload
         const uint32_t eom = LOG_EOM;
         file_.write(reinterpret_cast<const char*>(&eom), sizeof(eom));
     }
@@ -76,7 +73,6 @@ bool BinaryLogger::open(const std::string& directory, const std::string& prefix,
         combinedPath += "_combined_track_flow.dat";
     combinedDat_.open(combinedPath, std::ios::out);
     if (combinedDat_.is_open()) {
-        // Run details at top (algorithms/models used in this run)
         if (!runInfo.empty()) {
             std::istringstream lines(runInfo);
             std::string line;
@@ -127,10 +123,8 @@ void BinaryLogger::writeRecord(LogRecordType type, Timestamp ts,
     hdr.payloadSize = size;
 
     file_.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
-    if (size > 0 && data) {
+    if (size > 0 && data)
         file_.write(reinterpret_cast<const char*>(data), size);
-    }
-    // EOM sentinel — always written, even for zero-byte payloads
     const uint32_t eom = LOG_EOM;
     file_.write(reinterpret_cast<const char*>(&eom), sizeof(eom));
 }
@@ -146,12 +140,11 @@ void BinaryLogger::logRawDetections(Timestamp ts, const SPDetectionMessage& msg)
     uint32_t n = msg.numDetections;
     size_t sz = sizeof(uint32_t) * 3 + sizeof(Timestamp) + n * sizeof(Detection);
     buf.resize(sz);
-
     uint8_t* p = buf.data();
-    std::memcpy(p, &msg.messageId, 4); p += 4;
-    std::memcpy(p, &msg.dwellCount, 4); p += 4;
-    std::memcpy(p, &msg.timestamp, 8); p += 8;
-    std::memcpy(p, &n, 4); p += 4;
+    std::memcpy(p, &msg.messageId,    4); p += 4;
+    std::memcpy(p, &msg.dwellCount,   4); p += 4;
+    std::memcpy(p, &msg.timestamp,    8); p += 8;
+    std::memcpy(p, &n,                4); p += 4;
     for (uint32_t i = 0; i < n; ++i) {
         std::memcpy(p, &msg.detections[i], sizeof(Detection));
         p += sizeof(Detection);
@@ -192,32 +185,29 @@ void BinaryLogger::logPreprocessed(Timestamp ts, const std::vector<Detection>& d
 void BinaryLogger::logClustered(Timestamp ts, const std::vector<Cluster>& clusters) {
     uint32_t n = static_cast<uint32_t>(clusters.size());
     size_t sz = sizeof(uint32_t);
-    for (auto& c : clusters) {
-        sz += sizeof(uint32_t) + 7 * sizeof(double) + sizeof(uint32_t) +
-              3 * sizeof(double) + sizeof(uint32_t) +
-              c.detectionIndices.size() * sizeof(uint32_t);
-    }
+    for (auto& c : clusters)
+        sz += sizeof(uint32_t) + 7*sizeof(double) + sizeof(uint32_t)
+              + 3*sizeof(double) + sizeof(uint32_t)
+              + c.detectionIndices.size() * sizeof(uint32_t);
     std::vector<uint8_t> buf(sz);
     uint8_t* p = buf.data();
     std::memcpy(p, &n, 4); p += 4;
     for (auto& c : clusters) {
-        std::memcpy(p, &c.clusterId, 4); p += 4;
-        std::memcpy(p, &c.range, 8); p += 8;
-        std::memcpy(p, &c.azimuth, 8); p += 8;
-        std::memcpy(p, &c.elevation, 8); p += 8;
-        std::memcpy(p, &c.strength, 8); p += 8;
-        std::memcpy(p, &c.snr, 8); p += 8;
-        std::memcpy(p, &c.rcs, 8); p += 8;
-        std::memcpy(p, &c.microDoppler, 8); p += 8;
+        std::memcpy(p, &c.clusterId,     4); p += 4;
+        std::memcpy(p, &c.range,         8); p += 8;
+        std::memcpy(p, &c.azimuth,       8); p += 8;
+        std::memcpy(p, &c.elevation,     8); p += 8;
+        std::memcpy(p, &c.strength,      8); p += 8;
+        std::memcpy(p, &c.snr,           8); p += 8;
+        std::memcpy(p, &c.rcs,           8); p += 8;
+        std::memcpy(p, &c.microDoppler,  8); p += 8;
         std::memcpy(p, &c.numDetections, 4); p += 4;
-        std::memcpy(p, &c.cartesian.x, 8); p += 8;
-        std::memcpy(p, &c.cartesian.y, 8); p += 8;
-        std::memcpy(p, &c.cartesian.z, 8); p += 8;
+        std::memcpy(p, &c.cartesian.x,   8); p += 8;
+        std::memcpy(p, &c.cartesian.y,   8); p += 8;
+        std::memcpy(p, &c.cartesian.z,   8); p += 8;
         uint32_t ni = static_cast<uint32_t>(c.detectionIndices.size());
         std::memcpy(p, &ni, 4); p += 4;
-        for (auto idx : c.detectionIndices) {
-            std::memcpy(p, &idx, 4); p += 4;
-        }
+        for (auto idx : c.detectionIndices) { std::memcpy(p, &idx, 4); p += 4; }
     }
     writeRecord(LogRecordType::Clustered, ts, buf);
     for (const auto& c : clusters) {
@@ -236,9 +226,7 @@ void BinaryLogger::logPredicted(Timestamp ts, uint32_t trackId, const StateVecto
     std::vector<uint8_t> buf(sizeof(uint32_t) + STATE_DIM * sizeof(double));
     uint8_t* p = buf.data();
     std::memcpy(p, &trackId, 4); p += 4;
-    for (int i = 0; i < STATE_DIM; ++i) {
-        std::memcpy(p, &state[i], 8); p += 8;
-    }
+    for (int i = 0; i < STATE_DIM; ++i) { std::memcpy(p, &state[i], 8); p += 8; }
     writeRecord(LogRecordType::Predicted, ts, buf);
     std::ostringstream pl;
     pl << std::fixed << std::setprecision(4)
@@ -253,13 +241,14 @@ void BinaryLogger::logAssociated(Timestamp ts, uint32_t trackId,
                                   uint32_t clusterId, double distance) {
     std::vector<uint8_t> buf(sizeof(uint32_t) * 2 + sizeof(double));
     uint8_t* p = buf.data();
-    std::memcpy(p, &trackId, 4); p += 4;
+    std::memcpy(p, &trackId,   4); p += 4;
     std::memcpy(p, &clusterId, 4); p += 4;
-    std::memcpy(p, &distance, 8); p += 8;
+    std::memcpy(p, &distance,  8); p += 8;
     writeRecord(LogRecordType::Associated, ts, buf);
     std::ostringstream pl;
     pl << std::fixed << std::setprecision(4)
-       << "\t\t\t\t\t\t\t\t\t\t\t" << clusterId << "\t" << distance << "\t" << trackId << "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t";
+       << "\t\t\t\t\t\t\t\t\t\t\t" << clusterId << "\t" << distance << "\t"
+       << trackId << "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t";
     writeCombinedLine("association", ts, pl.str());
 }
 
@@ -268,9 +257,7 @@ void BinaryLogger::logTrackInitiated(Timestamp ts, uint32_t trackId,
     std::vector<uint8_t> buf(sizeof(uint32_t) + STATE_DIM * sizeof(double));
     uint8_t* p = buf.data();
     std::memcpy(p, &trackId, 4); p += 4;
-    for (int i = 0; i < STATE_DIM; ++i) {
-        std::memcpy(p, &state[i], 8); p += 8;
-    }
+    for (int i = 0; i < STATE_DIM; ++i) { std::memcpy(p, &state[i], 8); p += 8; }
     writeRecord(LogRecordType::TrackInitiated, ts, buf);
     std::ostringstream pl;
     pl << std::fixed << std::setprecision(4)
@@ -288,9 +275,7 @@ void BinaryLogger::logTrackUpdated(Timestamp ts, uint32_t trackId,
     std::memcpy(p, &trackId, 4); p += 4;
     uint32_t s = static_cast<uint32_t>(status);
     std::memcpy(p, &s, 4); p += 4;
-    for (int i = 0; i < STATE_DIM; ++i) {
-        std::memcpy(p, &state[i], 8); p += 8;
-    }
+    for (int i = 0; i < STATE_DIM; ++i) { std::memcpy(p, &state[i], 8); p += 8; }
     writeRecord(LogRecordType::TrackUpdated, ts, buf);
     std::ostringstream pl;
     pl << std::fixed << std::setprecision(4)
@@ -308,16 +293,45 @@ void BinaryLogger::logTrackDeleted(Timestamp ts, uint32_t trackId) {
     writeCombinedLine("track_delete", ts, pl.str());
 }
 
-void BinaryLogger::logTrackSent(Timestamp ts, const TrackUpdateMessage& msg) {
-    writeRecord(LogRecordType::TrackSent, ts, &msg, sizeof(TrackUpdateMessage));
+// logTrackSent now receives the IDL-generated CounterUAS::TrackUpdateMessage.
+void BinaryLogger::logTrackSent(Timestamp ts, const CounterUAS::TrackUpdateMessage& msg) {
+    // Serialise field-by-field (IDL class has getter methods, not flat layout).
+    uint32_t msgId = msg.messageId();
+    uint32_t trkId = msg.trackId();
+    uint64_t tstamp = msg.timestamp();
+    uint32_t stat  = static_cast<uint32_t>(msg.status());
+    uint32_t cls   = static_cast<uint32_t>(msg.classification());
+    double range   = msg.range();
+    double az      = msg.azimuth();
+    double el      = msg.elevation();
+    double rr      = msg.rangeRate();
+    double x=msg.x(), y=msg.y(), z=msg.z();
+    double vx=msg.vx(), vy=msg.vy(), vz=msg.vz();
+    double qual    = msg.trackQuality();
+    uint32_t hits  = msg.hitCount();
+    uint32_t miss  = msg.missCount();
+    uint32_t age   = msg.age();
+
+    size_t sz = 4+4+8+4+4 + 9*8 + 3*4;
+    std::vector<uint8_t> buf(sz);
+    uint8_t* p = buf.data();
+    auto copy4  = [&p](const void* v){ std::memcpy(p,v,4); p+=4; };
+    auto copy8  = [&p](const void* v){ std::memcpy(p,v,8); p+=8; };
+    copy4(&msgId); copy4(&trkId); copy8(&tstamp); copy4(&stat); copy4(&cls);
+    copy8(&range); copy8(&az);  copy8(&el);   copy8(&rr);
+    copy8(&x);     copy8(&y);   copy8(&z);
+    copy8(&vx);    copy8(&vy);  copy8(&vz);   copy8(&qual);
+    copy4(&hits);  copy4(&miss); copy4(&age);
+    writeRecord(LogRecordType::TrackSent, ts, buf);
+
     std::ostringstream pl;
     pl << std::fixed << std::setprecision(4)
-       << "\t\t" << msg.range << "\t" << (msg.azimuth * RAD2DEG) << "\t" << (msg.elevation * RAD2DEG)
-       << "\t" << msg.rangeRate << "\t\t\t\t\t\t\t\t\t\t"
-       << msg.trackId << "\t" << static_cast<int>(msg.status) << "\t" << static_cast<int>(msg.classification) << "\t"
-       << msg.x << "\t" << msg.y << "\t" << msg.z
-       << "\t" << msg.vx << "\t" << msg.vy << "\t" << msg.vz << "\t\t\t\t\t"
-       << msg.trackQuality << "\t" << msg.hitCount << "\t" << msg.missCount << "\t" << msg.age;
+       << "\t\t" << range << "\t" << (az * RAD2DEG) << "\t" << (el * RAD2DEG)
+       << "\t" << rr << "\t\t\t\t\t\t\t\t\t\t"
+       << trkId << "\t" << stat << "\t" << cls << "\t"
+       << x << "\t" << y << "\t" << z << "\t"
+       << vx << "\t" << vy << "\t" << vz << "\t\t\t\t\t"
+       << qual << "\t" << hits << "\t" << miss << "\t" << age;
     writeCombinedLine("sender", ts, pl.str());
 }
 
@@ -328,33 +342,24 @@ bool BinaryLogger::readHeader(std::ifstream& in, LogRecordHeader& hdr) {
 
 bool BinaryLogger::readPayload(std::ifstream& in, uint32_t size,
                                 std::vector<uint8_t>& data) {
-    // Guard against a corrupted payloadSize that would cause a huge allocation.
     if (size > LOG_MAX_PAYLOAD) return false;
-
     data.resize(size);
     if (size > 0) {
         in.read(reinterpret_cast<char*>(data.data()), size);
         if (!in.good()) return false;
     }
-
-    // Verify the EOM sentinel that follows every record payload.
     uint32_t eom = 0;
     in.read(reinterpret_cast<char*>(&eom), sizeof(eom));
     return in.good() && (eom == LOG_EOM);
 }
 
 bool BinaryLogger::resyncToNextRecord(std::ifstream& in) {
-    // LOG_MAGIC (0xCAFEBABE) as it appears in the file (little-endian byte order).
     const uint8_t magic_le[4] = {
         static_cast<uint8_t>(LOG_MAGIC & 0xFFu),
         static_cast<uint8_t>((LOG_MAGIC >> 8)  & 0xFFu),
         static_cast<uint8_t>((LOG_MAGIC >> 16) & 0xFFu),
         static_cast<uint8_t>((LOG_MAGIC >> 24) & 0xFFu)
     };
-
-    // Slide a 4-byte window through the stream one byte at a time.
-    // None of the four bytes of LOG_MAGIC repeat within the pattern, so a simple
-    // greedy match is sufficient (no KMP partial-match table needed).
     int matched = 0;
     char byte;
     while (in.read(&byte, 1)) {
@@ -362,7 +367,6 @@ bool BinaryLogger::resyncToNextRecord(std::ifstream& in) {
         if (b == magic_le[matched]) {
             ++matched;
             if (matched == 4) {
-                // Rewind so readHeader() reads from the SOM sentinel.
                 in.seekg(-4, std::ios::cur);
                 return in.good();
             }
@@ -378,7 +382,6 @@ std::string BinaryLogger::getLogPath() const { return logPath_; }
 // ---------------------------------------------------------------------------
 // ConsoleLogger
 // ---------------------------------------------------------------------------
-
 ConsoleLogger& ConsoleLogger::instance() {
     static ConsoleLogger inst;
     return inst;
@@ -402,14 +405,11 @@ void ConsoleLogger::log(Level lvl, const char* module, const char* fmt, va_list 
 #endif
 
     static const char* levelNames[] = {"ERROR", "WARN ", "INFO ", "DEBUG", "TRACE"};
-
     char timeBuf[32];
     std::snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d.%03d",
                   tm.tm_hour, tm.tm_min, tm.tm_sec, static_cast<int>(ms));
-
     char msgBuf[2048];
     std::vsnprintf(msgBuf, sizeof(msgBuf), fmt, args);
-
     std::fprintf(stderr, "[%s] [%s] [%-16s] %s\n",
                  timeBuf, levelNames[static_cast<int>(lvl)], module, msgBuf);
 }
@@ -417,19 +417,15 @@ void ConsoleLogger::log(Level lvl, const char* module, const char* fmt, va_list 
 void ConsoleLogger::error(const char* module, const char* fmt, ...) {
     va_list args; va_start(args, fmt); log(ERROR, module, fmt, args); va_end(args);
 }
-
 void ConsoleLogger::warn(const char* module, const char* fmt, ...) {
     va_list args; va_start(args, fmt); log(WARN, module, fmt, args); va_end(args);
 }
-
 void ConsoleLogger::info(const char* module, const char* fmt, ...) {
     va_list args; va_start(args, fmt); log(INFO, module, fmt, args); va_end(args);
 }
-
 void ConsoleLogger::debug(const char* module, const char* fmt, ...) {
     va_list args; va_start(args, fmt); log(DEBUG, module, fmt, args); va_end(args);
 }
-
 void ConsoleLogger::trace(const char* module, const char* fmt, ...) {
     va_list args; va_start(args, fmt); log(TRACE, module, fmt, args); va_end(args);
 }

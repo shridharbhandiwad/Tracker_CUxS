@@ -59,34 +59,34 @@ void Track::incrementAge() {
     ++age_;
 }
 
-TrackUpdateMessage Track::toUpdateMessage() const {
-    TrackUpdateMessage msg;
-    msg.messageId      = MSG_ID_TRACK_UPDATE;
-    msg.trackId        = id_;
-    msg.timestamp      = lastUpdateTime_;
-    msg.status         = status_;
-    msg.classification = classification_;
+CounterUAS::TrackUpdateMessage Track::toUpdateMessage() const {
+    CounterUAS::TrackUpdateMessage msg;
+    msg.messageId(MSG_ID_TRACK_UPDATE);
+    msg.trackId(id_);
+    msg.timestamp(lastUpdateTime_);
+    msg.status(status_);
+    msg.classification(classification_);
 
     auto sph = sphericalPosition();
-    msg.range     = sph.range;
-    msg.azimuth   = sph.azimuth;
-    msg.elevation = sph.elevation;
-    msg.rangeRate = rangeRate();
+    msg.range(sph.range);
+    msg.azimuth(sph.azimuth);
+    msg.elevation(sph.elevation);
+    msg.rangeRate(rangeRate());
 
     auto pos = position();
-    msg.x = pos.x;
-    msg.y = pos.y;
-    msg.z = pos.z;
+    msg.x(pos.x);
+    msg.y(pos.y);
+    msg.z(pos.z);
 
     auto vel = velocity();
-    msg.vx = vel.x;
-    msg.vy = vel.y;
-    msg.vz = vel.z;
+    msg.vx(vel.x);
+    msg.vy(vel.y);
+    msg.vz(vel.z);
 
-    msg.trackQuality = quality_;
-    msg.hitCount     = hitCount_;
-    msg.missCount    = missCount_;
-    msg.age          = age_;
+    msg.trackQuality(quality_);
+    msg.hitCount(hitCount_);
+    msg.missCount(missCount_);
+    msg.age(age_);
     return msg;
 }
 

@@ -11,43 +11,44 @@ public:
     Track(uint32_t id, const StateVector& x0, const StateMatrix& P0,
           const PredictionConfig& predCfg, Timestamp initTime);
 
-    uint32_t id() const { return id_; }
-    TrackStatus status() const { return status_; }
-    TrackClassification classification() const { return classification_; }
+    uint32_t id()                          const { return id_; }
+    TrackStatus status()                   const { return status_; }
+    TrackClassification classification()   const { return classification_; }
 
-    const IMMState& immState() const { return immState_; }
-    IMMState& immState() { return immState_; }
+    const IMMState& immState()             const { return immState_; }
+    IMMState& immState()                         { return immState_; }
 
-    const StateVector& state() const { return immState_.mergedState; }
-    const StateMatrix& covariance() const { return immState_.mergedCovariance; }
+    const StateVector& state()             const { return immState_.mergedState; }
+    const StateMatrix& covariance()        const { return immState_.mergedCovariance; }
 
-    CartesianPos position() const;
-    CartesianPos velocity() const;
-    SphericalPos sphericalPosition() const;
-    double rangeRate() const;
+    CartesianPos position()                const;
+    CartesianPos velocity()                const;
+    SphericalPos sphericalPosition()       const;
+    double rangeRate()                     const;
 
-    uint32_t hitCount() const { return hitCount_; }
-    uint32_t missCount() const { return missCount_; }
-    uint32_t consecutiveMisses() const { return consecutiveMisses_; }
-    uint32_t age() const { return age_; }
-    double quality() const { return quality_; }
-    Timestamp lastUpdateTime() const { return lastUpdateTime_; }
-    Timestamp initiationTime() const { return initiationTime_; }
+    uint32_t hitCount()            const { return hitCount_; }
+    uint32_t missCount()           const { return missCount_; }
+    uint32_t consecutiveMisses()   const { return consecutiveMisses_; }
+    uint32_t age()                 const { return age_; }
+    double   quality()             const { return quality_; }
+    Timestamp lastUpdateTime()     const { return lastUpdateTime_; }
+    Timestamp initiationTime()     const { return initiationTime_; }
 
-    void setStatus(TrackStatus s) { status_ = s; }
+    void setStatus(TrackStatus s)              { status_ = s; }
     void setClassification(TrackClassification c) { classification_ = c; }
-    void setQuality(double q) { quality_ = q; }
+    void setQuality(double q)                  { quality_ = q; }
 
     void recordHit();
     void recordMiss();
     void incrementAge();
 
-    TrackUpdateMessage toUpdateMessage() const;
+    // Returns the IDL-generated wire type — ready for DDS publication.
+    CounterUAS::TrackUpdateMessage toUpdateMessage() const;
 
 private:
     uint32_t            id_;
-    TrackStatus         status_         = TrackStatus::Tentative;
-    TrackClassification classification_ = TrackClassification::Unknown;
+    TrackStatus         status_         = TrackStatusVal::Tentative;
+    TrackClassification classification_ = TrackClassVal::Unknown;
     IMMState            immState_;
 
     uint32_t hitCount_          = 0;

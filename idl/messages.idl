@@ -1,16 +1,26 @@
 /*
- * Counter-UAS Radar Tracker - Interface Definition Language
- * Defines all message structures exchanged over UDP between subsystems.
+ * Counter-UAS Radar Tracker — Interface Definition Language
  *
- * Protocol: Custom binary serialization over UDP
- * Byte order: Little-endian
+ * This file is the SINGLE SOURCE OF TRUTH for all binary wire messages
+ * exchanged between system components.  C++ types and CDR serialization
+ * are generated automatically from this file by fastddsgen at build time.
+ * Hand-written type definitions are FORBIDDEN for any type declared here.
+ *
+ * Code generation command (run by CMake automatically):
+ *   fastddsgen -replace -d <build>/generated idl/messages.idl
+ *
+ * Protocol: DDS RTPS (Real-Time Publish-Subscribe) over UDP
+ * Byte order: CDR (Common Data Representation), little-endian
+ * DDS Domain: 0
  */
 
 module CounterUAS {
 
     /* ================================================================
-     * DSP -> Tracker: Signal Processing Detection Message
-     * Sent every 100ms per dwell
+     * DDS Topic: "SPDetection"
+     * Publisher : DSP (Signal Processing subsystem)
+     * Subscriber: Tracker
+     * Rate      : 100 ms / dwell
      * ================================================================ */
     const unsigned long MSG_ID_SP_DETECTION = 0x0001;
 
@@ -26,16 +36,17 @@ module CounterUAS {
     };
 
     struct SPDetectionMessage {
-        unsigned long   messageId;      // MSG_ID_SP_DETECTION
-        unsigned long   dwellCount;     // monotonic dwell counter
-        unsigned long long timestamp;   // microseconds since epoch
-        unsigned long   numDetections;  // number of detections in this dwell
-        sequence<DetectionData> detections; // variable-length array
+        unsigned long      messageId;      // MSG_ID_SP_DETECTION
+        unsigned long      dwellCount;     // monotonic dwell counter
+        unsigned long long timestamp;      // microseconds since epoch
+        unsigned long      numDetections;  // number of detections in this dwell
+        sequence<DetectionData> detections;
     };
 
     /* ================================================================
-     * Tracker -> Display: Track Update Message
-     * Sent for each active track after processing cycle
+     * DDS Topic: "TrackUpdate"
+     * Publisher : Tracker
+     * Subscriber: Display / any consumer
      * ================================================================ */
     const unsigned long MSG_ID_TRACK_UPDATE = 0x0002;
 
@@ -77,16 +88,105 @@ module CounterUAS {
     };
 
     /* ================================================================
-     * Tracker -> Display: Track Table Summary
-     * Periodic summary of all active tracks
+     * DDS Topic: "TrackTable"
+     * Publisher : Tracker (periodic batch summary of all active tracks)
+     * Subscriber: Display / any consumer
      * ================================================================ */
     const unsigned long MSG_ID_TRACK_TABLE = 0x0003;
 
     struct TrackTableMessage {
-        unsigned long   messageId;      // MSG_ID_TRACK_TABLE
+        unsigned long      messageId;   // MSG_ID_TRACK_TABLE
         unsigned long long timestamp;
-        unsigned long   numTracks;
+        unsigned long      numTracks;
         sequence<TrackUpdateMessage> tracks;
+    };
+
+    /* ================================================================
+     * DDS Topic: "ClusterTable"
+     * Publisher : Tracker (debug — post-clustering output)
+     * Subscriber: Display / diagnostics
+     * ================================================================ */
+    const unsigned long MSG_ID_CLUSTER_TABLE = 0x0010;
+
+    struct ClusterData {
+        unsigned long clusterId;
+        unsigned long numDetections;
+        double        range;        // meters
+        double        azimuth;      // radians
+        double        elevation;    // radians
+        double        strength;     // dBm
+        double        snr;          // dB
+        double        rcs;          // dBsm
+        double        microDoppler; // Hz
+        double        x;            // meters (Cartesian)
+        double        y;
+        double        z;
+    };
+
+    struct ClusterTableMessage {
+        unsigned long      messageId;   // MSG_ID_CLUSTER_TABLE
+        unsigned long long timestamp;
+        unsigned long      dwellCount;
+        unsigned long      numClusters;
+        sequence<ClusterData> clusters;
+    };
+
+    /* ================================================================
+     * DDS Topic: "AssocTable"
+     * Publisher : Tracker (debug — association/gating output)
+     * Subscriber: Display / diagnostics
+     * ================================================================ */
+    const unsigned long MSG_ID_ASSOC_TABLE = 0x0011;
+
+    struct AssocEntry {
+        unsigned long trackId;
+        unsigned long clusterId;   // 0xFFFFFFFF = unmatched track
+        double        distance;    // Mahalanobis distance; -1 = unmatched
+        boolean       matched;
+    };
+
+    struct AssocTableMessage {
+        unsigned long      messageId;   // MSG_ID_ASSOC_TABLE
+        unsigned long long timestamp;
+        unsigned long      numEntries;
+        sequence<AssocEntry> entries;
+    };
+
+    /* ================================================================
+     * DDS Topic: "PredictedTable"
+     * Publisher : Tracker (debug — predicted state output)
+     * Subscriber: Display / diagnostics
+     * ================================================================ */
+    const unsigned long MSG_ID_PREDICTED_TABLE = 0x0012;
+
+    struct PredictedEntry {
+        unsigned long  trackId;
+        TrackStatus    trackStatus;
+        // State vector [x, vx, ax,  y, vy, ay,  z, vz, az]
+        double x;  double vx;  double ax;
+        double y;  double vy;  double ay;
+        double z;  double vz;  double az;
+        // Spherical position
+        double range;
+        double azimuth;
+        double elevation;
+        // Position covariance diagonal
+        double covX;
+        double covY;
+        double covZ;
+        // IMM model probabilities [CV, CA1, CA2, CTR1, CTR2]
+        double modelProb0;
+        double modelProb1;
+        double modelProb2;
+        double modelProb3;
+        double modelProb4;
+    };
+
+    struct PredictedTableMessage {
+        unsigned long      messageId;   // MSG_ID_PREDICTED_TABLE
+        unsigned long long timestamp;
+        unsigned long      numEntries;
+        sequence<PredictedEntry> entries;
     };
 
     /* ================================================================
@@ -113,16 +213,16 @@ module CounterUAS {
     const unsigned long LOG_EOM   = 0xDEADBEEF;  // End-of-Message
 
     enum LogRecordType {
-        LOG_RAW_DETECTION,
-        LOG_PREPROCESSED,
-        LOG_CLUSTERED,
-        LOG_PREDICTED,
-        LOG_ASSOCIATED,
-        LOG_TRACK_INITIATED,
-        LOG_TRACK_UPDATED,
-        LOG_TRACK_DELETED,
-        LOG_TRACK_SENT,
-        LOG_RUN_INFO
+        LOG_RAW_DETECTION,    // 0
+        LOG_PREPROCESSED,     // 1
+        LOG_CLUSTERED,        // 2
+        LOG_PREDICTED,        // 3
+        LOG_ASSOCIATED,       // 4
+        LOG_TRACK_INITIATED,  // 5
+        LOG_TRACK_UPDATED,    // 6
+        LOG_TRACK_DELETED,    // 7
+        LOG_TRACK_SENT,       // 8
+        LOG_RUN_INFO          // 9
     };
 
     struct LogRecordHeader {
