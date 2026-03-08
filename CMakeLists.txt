@@ -13,6 +13,50 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# CMake module path — cmake/ contains Findfastrtps.cmake / Findfastcdr.cmake
+# fallback modules for platforms where Fast DDS is not installed to a
+# standard system prefix (e.g. a user-local Windows installation).
+# ---------------------------------------------------------------------------
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+
+# Probe well-known eProsima Fast DDS installation prefixes so that
+# find_package(fastrtps) / find_package(fastcdr) can locate the upstream
+# config files without requiring the user to set CMAKE_PREFIX_PATH manually.
+#
+# Override / extend by passing -DCMAKE_PREFIX_PATH=<path> to cmake, or by
+# setting the FASTRTPS_HOME or FASTDDS_HOME environment variables.
+if(WIN32)
+    foreach(_prefix
+            "$ENV{FASTRTPS_HOME}"
+            "$ENV{FASTDDS_HOME}"
+            "C:/Program Files/eProsima/fastrtps 2"
+            "C:/Program Files/eProsima/fastrtps 2.6"
+            "C:/Program Files/eProsima/fastrtps 2.10"
+            "C:/Program Files/eProsima/fastrtps 2.11"
+            "C:/Program Files/eProsima/fastrtps 2.12"
+            "C:/Program Files/eProsima/fastrtps 2.13"
+            "C:/Program Files/eProsima/fastrtps"
+            "C:/eProsima/fastrtps"
+    )
+        if(EXISTS "${_prefix}")
+            list(APPEND CMAKE_PREFIX_PATH "${_prefix}")
+        endif()
+    endforeach()
+else()
+    foreach(_prefix
+            "$ENV{FASTRTPS_HOME}"
+            "$ENV{FASTDDS_HOME}"
+            "/opt/ros/humble"
+            "/opt/ros/iron"
+            "/opt/ros/jazzy"
+    )
+        if(EXISTS "${_prefix}")
+            list(APPEND CMAKE_PREFIX_PATH "${_prefix}")
+        endif()
+    endforeach()
+endif()
+
+# ---------------------------------------------------------------------------
 # Fast DDS (eProsima): required for IDL-generated types and DDS pub/sub
 # ---------------------------------------------------------------------------
 find_package(fastrtps REQUIRED)   # cmake package name for Fast DDS 2.x
@@ -23,8 +67,27 @@ find_package(fastcdr  REQUIRED)
 # ${CMAKE_BINARY_DIR}/generated/ at configure time (so downstream targets
 # can depend on the generated files).
 # ---------------------------------------------------------------------------
-find_program(FASTDDSGEN_BIN fastddsgen REQUIRED
-    HINTS /usr/bin /usr/local/bin)
+find_program(FASTDDSGEN_BIN fastddsgen
+    HINTS
+        "$ENV{FASTRTPS_HOME}/bin"
+        "$ENV{FASTDDS_HOME}/bin"
+        "C:/Program Files/eProsima/fastrtps 2/bin"
+        "C:/Program Files/eProsima/fastrtps 2.6/bin"
+        "C:/Program Files/eProsima/fastrtps 2.10/bin"
+        "C:/Program Files/eProsima/fastrtps 2.11/bin"
+        "C:/Program Files/eProsima/fastrtps 2.12/bin"
+        "C:/Program Files/eProsima/fastrtps 2.13/bin"
+        "C:/Program Files/eProsima/fastrtps/bin"
+        "C:/eProsima/fastrtps/bin"
+        /usr/bin
+        /usr/local/bin
+)
+if(NOT FASTDDSGEN_BIN)
+    message(FATAL_ERROR
+        "fastddsgen not found.  Install eProsima Fast DDS tools and ensure "
+        "its bin/ directory is on PATH, or set FASTRTPS_HOME / FASTDDS_HOME "
+        "to the Fast DDS installation prefix.")
+endif()
 message(STATUS "fastddsgen: ${FASTDDSGEN_BIN}")
 
 set(IDL_FILE    "${CMAKE_SOURCE_DIR}/idl/messages.idl")
