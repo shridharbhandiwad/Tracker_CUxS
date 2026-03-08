@@ -133,9 +133,7 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(fastrtps
     REQUIRED_VARS fastrtps_LIBRARY fastrtps_INCLUDE_DIR
     FAIL_MESSAGE
-        "Could not find Fast DDS (fastrtps).  Install eProsima Fast DDS or set "
-        "FASTRTPS_HOME / FASTDDS_HOME to the installation prefix, or point "
-        "fastrtps_DIR at the directory containing fastrtpsConfig.cmake."
+        "Could not find Fast DDS (fastrtps). Install eProsima Fast DDS or set FASTRTPS_HOME / FASTDDS_HOME to the installation prefix, or point fastrtps_DIR at the directory containing fastrtpsConfig.cmake."
 )
 
 if(fastrtps_FOUND AND NOT TARGET fastrtps)
