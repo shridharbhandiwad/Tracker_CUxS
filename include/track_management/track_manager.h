@@ -20,38 +20,34 @@ public:
     void processDwell(const SPDetectionMessage& msg);
 
     const std::vector<std::unique_ptr<Track>>& tracks() const { return tracks_; }
-    std::vector<TrackUpdateMessage> getTrackUpdates() const;
 
-    uint32_t numActiveTracks() const;
+    // Returns IDL-generated wire types ready for DDS publication.
+    std::vector<CounterUAS::TrackUpdateMessage> getTrackUpdates() const;
+
+    uint32_t numActiveTracks()   const;
     uint32_t numConfirmedTracks() const;
 
     BinaryLogger& logger() { return logger_; }
 
-    // Expose last pipeline stage data for the display/sender
-    const std::vector<ClusterWire>&        lastClusters()  const { return lastClusters_; }
-    const std::vector<AssocEntryWire>&     lastAssoc()     const { return lastAssoc_; }
-    const std::vector<PredictedEntryWire>& lastPredicted() const { return lastPredicted_; }
-    uint32_t                               lastDwellCount() const { return dwellCount_; }
+    // Cached intermediate pipeline stages (IDL types) for TrackSender.
+    const std::vector<CounterUAS::ClusterData>&       lastClusters()   const { return lastClusters_; }
+    const std::vector<CounterUAS::AssocEntry>&         lastAssoc()      const { return lastAssoc_; }
+    const std::vector<CounterUAS::PredictedEntry>&     lastPredicted()  const { return lastPredicted_; }
+    uint32_t                                           lastDwellCount() const { return dwellCount_; }
 
 private:
     void predict(double dt);
     void associate(const std::vector<Cluster>& clusters);
-    void updateMatchedTracks(const AssociationOutput& assoc,
-                             const std::vector<Cluster>& clusters);
-    void handleUnmatchedTracks(const std::vector<int>& unmatchedTracks);
-    void initiateNewTracks(const std::vector<Cluster>& clusters,
-                           const std::vector<int>& unmatchedClusters,
-                           Timestamp ts, uint32_t dwellCount);
     void maintainTracks();
     void deleteTracks();
     void classifyTracks();
 
     TrackerConfig config_;
-    std::unique_ptr<Preprocessor> preprocessor_;
-    std::unique_ptr<ClusterEngine> clusterEngine_;
-    std::unique_ptr<IMMFilter> immFilter_;
-    std::unique_ptr<AssociationEngine> associationEngine_;
-    std::unique_ptr<TrackInitiator> trackInitiator_;
+    std::unique_ptr<Preprocessor>        preprocessor_;
+    std::unique_ptr<ClusterEngine>       clusterEngine_;
+    std::unique_ptr<IMMFilter>           immFilter_;
+    std::unique_ptr<AssociationEngine>   associationEngine_;
+    std::unique_ptr<TrackInitiator>      trackInitiator_;
 
     std::vector<std::unique_ptr<Track>> tracks_;
     BinaryLogger logger_;
@@ -60,10 +56,10 @@ private:
     Timestamp lastDwellTime_ = 0;
     uint32_t  dwellCount_    = 0;
 
-    // Cached intermediate pipeline stage data for forwarding to display
-    std::vector<ClusterWire>        lastClusters_;
-    std::vector<AssocEntryWire>     lastAssoc_;
-    std::vector<PredictedEntryWire> lastPredicted_;
+    // IDL-typed caches for pipeline debug topics.
+    std::vector<CounterUAS::ClusterData>     lastClusters_;
+    std::vector<CounterUAS::AssocEntry>      lastAssoc_;
+    std::vector<CounterUAS::PredictedEntry>  lastPredicted_;
 };
 
 } // namespace cuas

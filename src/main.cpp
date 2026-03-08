@@ -129,6 +129,5 @@ int main(int argc, char* argv[]) {
     }
 
     LOG_INFO("Main", "Tracker exited cleanly");
-    cuas::UdpSocket::cleanupNetwork();
     return 0;
 }

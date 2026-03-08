@@ -435,7 +435,7 @@ static void testBinaryLoggerAPI(const std::string& tmpDir)
     cuas::Detection d1{}, d2{};
     d1.range = 800.0;  d1.snr = 10.0;
     d2.range = 950.0;  d2.snr =  8.5;
-    dmsg.detections = {d1, d2};
+    dmsg.detections = { d1, d2 };
     logger.logRawDetections(ts, dmsg);
 
     logger.logPreprocessed(ts + 100u, {d1, d2});
@@ -443,7 +443,7 @@ static void testBinaryLoggerAPI(const std::string& tmpDir)
     cuas::StateVector sv{};
     sv[0] = 500.0; sv[3] = -100.0; sv[6] = 30.0;
     logger.logTrackInitiated(ts + 200u, 1u, sv);
-    logger.logTrackUpdated(ts + 300u, 1u, sv, cuas::TrackStatus::Confirmed);
+    logger.logTrackUpdated(ts + 300u, 1u, sv, cuas::TrackStatusVal::Confirmed);
     logger.logAssociated(ts + 400u, 1u, 0u, 1.23);
     logger.logTrackDeleted(ts + 500u, 1u);
 

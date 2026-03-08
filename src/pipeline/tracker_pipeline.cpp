@@ -1,4 +1,5 @@
 #include "pipeline/tracker_pipeline.h"
+#include "common/constants.h"
 #include "common/logger.h"
 #include <chrono>
 
@@ -13,25 +14,23 @@ TrackerPipeline::~TrackerPipeline() {
 bool TrackerPipeline::start() {
     LOG_INFO("Pipeline", "Starting tracker pipeline...");
 
-    receiver_     = std::make_unique<DetectionReceiver>(config_.network);
-    trackManager_ = std::make_unique<TrackManager>(config_);
-    sender_       = std::make_unique<TrackSender>(config_.network, config_.display);
+    // Shared DDS participant for all topics in this process.
+    participant_  = std::make_unique<CuasDdsParticipant>();
 
-    if (!sender_->init()) {
-        LOG_ERROR("Pipeline", "Failed to initialize track sender");
-        return false;
-    }
+    trackManager_ = std::make_unique<TrackManager>(config_);
+
+    sender_       = std::make_unique<TrackSender>(*participant_, config_.display);
+
+    // DetectionReceiver subscribes on the DDS thread; it enqueues messages
+    // so the processing loop handles them on the pipeline thread.
+    receiver_     = std::make_unique<DetectionReceiver>(*participant_,
+                                                         TOPIC_SP_DETECTION);
+    receiver_->setCallback([this](const SPDetectionMessage& msg) {
+        onDetectionReceived(msg);
+    });
 
     running_.store(true);
     processingThread_ = std::thread(&TrackerPipeline::processingLoop, this);
-
-    if (!receiver_->start([this](const SPDetectionMessage& msg) {
-            onDetectionReceived(msg);
-        })) {
-        LOG_ERROR("Pipeline", "Failed to start detection receiver");
-        stop();
-        return false;
-    }
 
     LOG_INFO("Pipeline", "Tracker pipeline started successfully");
     return true;
@@ -41,11 +40,14 @@ void TrackerPipeline::stop() {
     running_.store(false);
     queueCV_.notify_all();
 
-    if (receiver_) receiver_->stop();
     if (processingThread_.joinable()) processingThread_.join();
-    if (sender_) sender_->close();
 
-    LOG_INFO("Pipeline", "Tracker pipeline stopped. Total cycles: %lu", 
+    // Destroy DDS entities in reverse order.
+    sender_.reset();
+    receiver_.reset();
+    participant_.reset();
+
+    LOG_INFO("Pipeline", "Tracker pipeline stopped. Total cycles: %lu",
              static_cast<unsigned long>(cycleCount_));
     printStats();
 }
@@ -77,37 +79,33 @@ void TrackerPipeline::processingLoop() {
 
         auto cycleStart = std::chrono::high_resolution_clock::now();
 
-        // Forward raw detections to the display before processing so the
-        // display can show both the incoming detections and the resulting tracks.
+        // Forward raw detections to the display (re-publish on SPDetection topic).
         sender_->sendRawDetections(msg);
 
-        // Process the dwell through the tracking pipeline
+        // Run the tracking pipeline.
         trackManager_->processDwell(msg);
 
         Timestamp ts = msg.timestamp > 0 ? msg.timestamp : nowMicros();
 
-        // Forward intermediate pipeline stage data to the display
-        sender_->sendClusterTable(trackManager_->lastClusters(), ts, trackManager_->lastDwellCount());
+        // Publish intermediate pipeline stages to debug topics.
+        sender_->sendClusterTable(trackManager_->lastClusters(), ts,
+                                   trackManager_->lastDwellCount());
         sender_->sendPredictedTable(trackManager_->lastPredicted(), ts);
         sender_->sendAssocTable(trackManager_->lastAssoc(), ts);
 
-        // Get track updates and send to display
+        // Publish track table.
         auto updates = trackManager_->getTrackUpdates();
-
         if (!updates.empty()) {
             sender_->sendTrackUpdates(updates, ts);
-
-            // Log sent tracks
-            for (const auto& u : updates) {
+            for (const auto& u : updates)
                 trackManager_->logger().logTrackSent(ts, u);
-            }
         }
 
         ++cycleCount_;
 
         auto cycleEnd = std::chrono::high_resolution_clock::now();
-        auto cycleMs = std::chrono::duration_cast<std::chrono::microseconds>(
-                           cycleEnd - cycleStart).count() / 1000.0;
+        auto cycleMs  = std::chrono::duration_cast<std::chrono::microseconds>(
+                            cycleEnd - cycleStart).count() / 1000.0;
 
         if (cycleCount_ % 100 == 0) {
             LOG_INFO("Pipeline", "Cycle %lu: %u tracks (%u confirmed), %.2f ms",

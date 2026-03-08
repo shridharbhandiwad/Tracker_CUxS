@@ -17,15 +17,12 @@ TrackManager::TrackManager(const TrackerConfig& cfg) : config_(cfg) {
         cfg.trackManagement.initialCovariance,
         cfg.prediction);
 
-    // Measurement noise is recomputed per-dwell in associate() based on the
-    // current maximum track range.  Initialise to a sensible diagonal default.
     for (int i = 0; i < MEAS_DIM; ++i)
         for (int j = 0; j < MEAS_DIM; ++j)
             measurementNoise_[i][j] = (i == j) ? 625.0 : 0.0;
 
-    if (cfg.system.logEnabled) {
+    if (cfg.system.logEnabled)
         logger_.open(cfg.system.logDirectory, "tracker", getRunInfoString(cfg));
-    }
 
     LOG_INFO("TrackManager", "Initialized. Cluster: %s, Association: %s",
              clusterEngine_->activeMethod().c_str(),
@@ -39,60 +36,42 @@ void TrackManager::processDwell(const SPDetectionMessage& msg) {
     LOG_DEBUG("TrackManager", "=== Dwell %u: %u detections ===",
               dwellCount_, msg.numDetections);
 
-    // 1. Log raw
     logger_.logRawDetections(ts, msg);
 
-    // 2. Preprocess
     auto filtered = preprocessor_->process(msg.detections);
     logger_.logPreprocessed(ts, filtered);
-
     LOG_DEBUG("TrackManager", "After preprocessing: %zu detections", filtered.size());
 
-    // 3. Cluster
     auto clusters = clusterEngine_->process(filtered);
     logger_.logClustered(ts, clusters);
 
-    // Cache cluster data for display forwarding
+    // Convert internal Cluster → IDL ClusterData for DDS forwarding.
     lastClusters_.clear();
     lastClusters_.reserve(clusters.size());
     for (const auto& c : clusters) {
-        ClusterWire cw{};
-        cw.clusterId     = c.clusterId;
-        cw.numDetections = c.numDetections;
-        cw.range         = c.range;
-        cw.azimuth       = c.azimuth;
-        cw.elevation     = c.elevation;
-        cw.strength      = c.strength;
-        cw.snr           = c.snr;
-        cw.rcs           = c.rcs;
-        cw.microDoppler  = c.microDoppler;
-        cw.x             = c.cartesian.x;
-        cw.y             = c.cartesian.y;
-        cw.z             = c.cartesian.z;
-        lastClusters_.push_back(cw);
+        CounterUAS::ClusterData cd;
+        cd.clusterId(c.clusterId);
+        cd.numDetections(c.numDetections);
+        cd.range(c.range);   cd.azimuth(c.azimuth);   cd.elevation(c.elevation);
+        cd.strength(c.strength); cd.snr(c.snr);        cd.rcs(c.rcs);
+        cd.microDoppler(c.microDoppler);
+        cd.x(c.cartesian.x); cd.y(c.cartesian.y);     cd.z(c.cartesian.z);
+        lastClusters_.push_back(cd);
     }
-
     LOG_DEBUG("TrackManager", "After clustering: %zu clusters", clusters.size());
 
-    // 4. Predict existing tracks
     double dt = 0.0;
     if (lastDwellTime_ > 0) {
-        dt = (ts - lastDwellTime_) * 1e-6; // to seconds
+        dt = (ts - lastDwellTime_) * 1e-6;
     } else {
         dt = config_.system.cyclePeriodMs * 1e-3;
     }
     if (dt <= 0.0 || dt > 10.0) dt = config_.system.cyclePeriodMs * 1e-3;
 
     predict(dt);
-
-    // 5. Associate
     associate(clusters);
-
-    // 6. Maintain and delete
     maintainTracks();
     deleteTracks();
-
-    // 7. Classify
     classifyTracks();
 
     lastDwellTime_ = ts;
@@ -105,7 +84,7 @@ void TrackManager::predict(double dt) {
     lastPredicted_.clear();
 
     for (auto& track : tracks_) {
-        if (track->status() == TrackStatus::Deleted) continue;
+        if (track->status() == TrackStatusVal::Deleted) continue;
 
         immFilter_->predict(dt, track->immState());
         track->incrementAge();
@@ -113,94 +92,88 @@ void TrackManager::predict(double dt) {
         Timestamp now = nowMicros();
         logger_.logPredicted(now, track->id(), track->state());
 
-        // Cache predicted state for display forwarding
-        PredictedEntryWire pe{};
-        pe.trackId     = track->id();
-        pe.trackStatus = static_cast<uint32_t>(track->status());
-        const auto& s  = track->state();
-        pe.x = s[0]; pe.vx = s[1]; pe.ax = s[2];
-        pe.y = s[3]; pe.vy = s[4]; pe.ay = s[5];
-        pe.z = s[6]; pe.vz = s[7]; pe.az = s[8];
+        // Convert predicted state → IDL PredictedEntry for DDS forwarding.
+        CounterUAS::PredictedEntry pe;
+        pe.trackId(track->id());
+        pe.trackStatus(track->status());
+        const auto& s = track->state();
+        pe.x(s[0]); pe.vx(s[1]); pe.ax(s[2]);
+        pe.y(s[3]); pe.vy(s[4]); pe.ay(s[5]);
+        pe.z(s[6]); pe.vz(s[7]); pe.az(s[8]);
         auto sph = track->sphericalPosition();
-        pe.range = sph.range; pe.azimuth = sph.azimuth; pe.elevation = sph.elevation;
+        pe.range(sph.range); pe.azimuth(sph.azimuth); pe.elevation(sph.elevation);
         const auto& P = track->covariance();
-        pe.covX = P[0][0]; pe.covY = P[3][3]; pe.covZ = P[6][6];
-        for (int m = 0; m < 5; ++m)
-            pe.modelProb[m] = track->immState().modeProbabilities[m];
+        pe.covX(P[0][0]); pe.covY(P[3][3]); pe.covZ(P[6][6]);
+        const auto& probs = track->immState().modeProbabilities;
+        pe.modelProb0(probs[0]); pe.modelProb1(probs[1]); pe.modelProb2(probs[2]);
+        pe.modelProb3(probs[3]); pe.modelProb4(probs[4]);
         lastPredicted_.push_back(pe);
 
         LOG_TRACE("TrackManager", "Predicted track %u: x=%.1f y=%.1f z=%.1f",
-                  track->id(), track->state()[0], track->state()[3], track->state()[6]);
+                  track->id(), s[0], s[3], s[6]);
     }
 }
 
 void TrackManager::associate(const std::vector<Cluster>& clusters) {
-    // Collect active tracks for association
     std::vector<Track*> activeTracks;
-    std::vector<int> activeIndices;
+    std::vector<int>    activeIndices;
     for (int i = 0; i < static_cast<int>(tracks_.size()); ++i) {
-        if (tracks_[i]->status() != TrackStatus::Deleted) {
+        if (tracks_[i]->status() != TrackStatusVal::Deleted) {
             activeTracks.push_back(tracks_[i].get());
             activeIndices.push_back(i);
         }
     }
 
-    // Build vector of references
     std::vector<Track> trackRefs;
     trackRefs.reserve(activeTracks.size());
-    for (auto* t : activeTracks) {
+    for (auto* t : activeTracks)
         trackRefs.push_back(*t);
-    }
 
-    // Compute range-adaptive measurement noise R.
-    // DSP sensor: range σ = 10 m, angle σ = 0.005 rad.
-    // Cross-range noise at slant range R is  R * σ_angle  (small-angle approx).
-    // Using the worst-case (maximum) track range keeps the gate correct for
-    // all tracks simultaneously without per-track R bookkeeping.
+    // Adaptive measurement noise: range σ = 10 m, angle σ = 0.005 rad.
     {
-        static constexpr double SIGMA_RANGE = 10.0;   // metres
-        static constexpr double SIGMA_ANGLE = 0.005;  // radians
-        double maxRange = 5000.0;                     // conservative floor
+        static constexpr double SIGMA_RANGE = 10.0;
+        static constexpr double SIGMA_ANGLE = 0.005;
+        double maxRange = 5000.0;
         for (const auto& t : trackRefs)
             maxRange = std::max(maxRange, t.sphericalPosition().range);
         double sigCross = SIGMA_ANGLE * maxRange;
         measurementNoise_ = {};
-        measurementNoise_[0][0] = SIGMA_RANGE * SIGMA_RANGE; // range axis  ~ 100 m²
-        measurementNoise_[1][1] = sigCross * sigCross;        // cross-range (range-dep)
-        measurementNoise_[2][2] = sigCross * sigCross;        // elevation cross-range
+        measurementNoise_[0][0] = SIGMA_RANGE * SIGMA_RANGE;
+        measurementNoise_[1][1] = sigCross * sigCross;
+        measurementNoise_[2][2] = sigCross * sigCross;
     }
 
     auto assocResult = associationEngine_->process(trackRefs, clusters,
                                                     *immFilter_, measurementNoise_);
 
-    // Cache association results for display forwarding
+    // Convert association results → IDL AssocEntry for DDS forwarding.
     lastAssoc_.clear();
     for (const auto& match : assocResult.matched) {
-        AssocEntryWire ae{};
-        ae.trackId   = activeTracks[match.trackIndex]->id();
-        ae.clusterId = clusters[match.clusterIndex].clusterId;
-        ae.distance  = match.distance;
-        ae.matched   = 1;
+        CounterUAS::AssocEntry ae;
+        ae.trackId(activeTracks[match.trackIndex]->id());
+        ae.clusterId(clusters[match.clusterIndex].clusterId);
+        ae.distance(match.distance);
+        ae.matched(true);
         lastAssoc_.push_back(ae);
     }
     for (int unmIdx : assocResult.unmatchedTracks) {
-        AssocEntryWire ae{};
-        ae.trackId   = activeTracks[unmIdx]->id();
-        ae.clusterId = 0xFFFFFFFFu;
-        ae.distance  = -1.0;
-        ae.matched   = 0;
+        CounterUAS::AssocEntry ae;
+        ae.trackId(activeTracks[unmIdx]->id());
+        ae.clusterId(0xFFFFFFFFu);
+        ae.distance(-1.0);
+        ae.matched(false);
         lastAssoc_.push_back(ae);
     }
     for (int cIdx : assocResult.unmatchedClusters) {
-        AssocEntryWire ae{};
-        ae.trackId   = 0xFFFFFFFFu;
-        ae.clusterId = clusters[cIdx].clusterId;
-        ae.distance  = -1.0;
-        ae.matched   = 0;
+        CounterUAS::AssocEntry ae;
+        ae.trackId(0xFFFFFFFFu);
+        ae.clusterId(clusters[cIdx].clusterId);
+        ae.distance(-1.0);
+        ae.matched(false);
         lastAssoc_.push_back(ae);
     }
 
-    // Update matched tracks
+    // Update matched tracks.
     for (const auto& match : assocResult.matched) {
         int origIdx = activeIndices[match.trackIndex];
         const auto& cluster = clusters[match.clusterIndex];
@@ -218,29 +191,25 @@ void TrackManager::associate(const std::vector<Cluster>& clusters) {
                   tracks_[origIdx]->id(), cluster.clusterId, match.distance);
     }
 
-    // Handle unmatched tracks
     for (int unmIdx : assocResult.unmatchedTracks) {
         int origIdx = activeIndices[unmIdx];
         tracks_[origIdx]->recordMiss();
         LOG_TRACE("TrackManager", "Track %u missed", tracks_[origIdx]->id());
     }
 
-    // Initiate new tracks from unmatched clusters
+    // Initiate new tracks from unmatched clusters.
     std::vector<Cluster> unmatchedClusters;
-    for (int cIdx : assocResult.unmatchedClusters) {
+    for (int cIdx : assocResult.unmatchedClusters)
         unmatchedClusters.push_back(clusters[cIdx]);
-    }
 
     if (!unmatchedClusters.empty()) {
         Timestamp ts = nowMicros();
         auto newTracks = trackInitiator_->processCandidates(
             unmatchedClusters, ts, dwellCount_);
-
         for (auto& nt : newTracks) {
             logger_.logTrackInitiated(ts, nt->id(), nt->state());
             tracks_.push_back(std::move(nt));
         }
-
         trackInitiator_->purgeStaleCandidates(dwellCount_);
     }
 }
@@ -249,34 +218,30 @@ void TrackManager::maintainTracks() {
     const auto& maint = config_.trackManagement.maintenance;
 
     for (auto& track : tracks_) {
-        if (track->status() == TrackStatus::Deleted) continue;
+        if (track->status() == TrackStatusVal::Deleted) continue;
 
-        // Quality update
         double q = track->quality();
-        if (track->consecutiveMisses() == 0) {
+        if (track->consecutiveMisses() == 0)
             q = std::min(1.0, q + maint.qualityBoost);
-        } else {
+        else
             q *= maint.qualityDecayRate;
-        }
         track->setQuality(q);
 
-        // Status transitions
-        if (track->status() == TrackStatus::Tentative) {
+        if (track->status() == TrackStatusVal::Tentative) {
             if (track->hitCount() >= static_cast<uint32_t>(maint.confirmHits)) {
-                track->setStatus(TrackStatus::Confirmed);
+                track->setStatus(TrackStatusVal::Confirmed);
                 LOG_INFO("TrackManager", "Track %u confirmed (hits=%u)",
                          track->id(), track->hitCount());
             }
-        } else if (track->status() == TrackStatus::Confirmed) {
+        } else if (track->status() == TrackStatusVal::Confirmed) {
             if (track->consecutiveMisses() > 0) {
-                track->setStatus(TrackStatus::Coasting);
+                track->setStatus(TrackStatusVal::Coasting);
                 LOG_DEBUG("TrackManager", "Track %u coasting (misses=%u)",
                           track->id(), track->consecutiveMisses());
             }
-        } else if (track->status() == TrackStatus::Coasting) {
-            if (track->consecutiveMisses() == 0) {
-                track->setStatus(TrackStatus::Confirmed);
-            }
+        } else if (track->status() == TrackStatusVal::Coasting) {
+            if (track->consecutiveMisses() == 0)
+                track->setStatus(TrackStatusVal::Confirmed);
         }
     }
 }
@@ -285,89 +250,81 @@ void TrackManager::deleteTracks() {
     const auto& del = config_.trackManagement.deletion;
 
     for (auto& track : tracks_) {
-        if (track->status() == TrackStatus::Deleted) continue;
+        if (track->status() == TrackStatusVal::Deleted) continue;
 
         bool shouldDelete = false;
         std::string reason;
 
         if (static_cast<int>(track->consecutiveMisses()) >= del.maxCoastingDwells) {
-            shouldDelete = true;
-            reason = "max_coasting";
+            shouldDelete = true;  reason = "max_coasting";
         } else if (track->quality() < del.minQuality) {
-            shouldDelete = true;
-            reason = "low_quality";
+            shouldDelete = true;  reason = "low_quality";
         } else {
-            auto sph = track->sphericalPosition();
-            if (sph.range > del.maxRange) {
-                shouldDelete = true;
-                reason = "out_of_range";
+            if (track->sphericalPosition().range > del.maxRange) {
+                shouldDelete = true;  reason = "out_of_range";
             }
         }
 
         if (shouldDelete) {
-            track->setStatus(TrackStatus::Deleted);
+            track->setStatus(TrackStatusVal::Deleted);
             logger_.logTrackDeleted(nowMicros(), track->id());
             LOG_INFO("TrackManager", "Track %u deleted (%s)",
                      track->id(), reason.c_str());
         }
     }
 
-    // Remove deleted tracks
     tracks_.erase(
         std::remove_if(tracks_.begin(), tracks_.end(),
                        [](const std::unique_ptr<Track>& t) {
-                           return t->status() == TrackStatus::Deleted;
+                           return t->status() == TrackStatusVal::Deleted;
                        }),
         tracks_.end());
 }
 
 void TrackManager::classifyTracks() {
     for (auto& track : tracks_) {
-        if (track->status() == TrackStatus::Deleted) continue;
+        if (track->status() == TrackStatusVal::Deleted) continue;
 
         auto vel = track->velocity();
-        double speed = std::sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+        double speed = std::sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
 
-        // Simple heuristic classification based on speed and IMM mode probabilities
         const auto& probs = track->immState().modeProbabilities;
         double cvProb  = probs[0];
         double caProb  = probs[1] + probs[2];
         double ctrProb = probs[3] + probs[4];
 
-        if (speed < 2.0) {
-            track->setClassification(TrackClassification::Clutter);
-        } else if (ctrProb > 0.4 && speed > 5.0 && speed < 30.0) {
-            track->setClassification(TrackClassification::DroneRotary);
-        } else if (cvProb > 0.3 && speed > 15.0 && speed < 80.0) {
-            track->setClassification(TrackClassification::DroneFixedWing);
-        } else if (speed > 5.0 && speed < 25.0 && caProb > 0.3) {
-            track->setClassification(TrackClassification::Bird);
-        } else {
-            track->setClassification(TrackClassification::Unknown);
-        }
+        if (speed < 2.0)
+            track->setClassification(TrackClassVal::Clutter);
+        else if (ctrProb > 0.4 && speed > 5.0 && speed < 30.0)
+            track->setClassification(TrackClassVal::DroneRotary);
+        else if (cvProb > 0.3 && speed > 15.0 && speed < 80.0)
+            track->setClassification(TrackClassVal::DroneFixedWing);
+        else if (speed > 5.0 && speed < 25.0 && caProb > 0.3)
+            track->setClassification(TrackClassVal::Bird);
+        else
+            track->setClassification(TrackClassVal::Unknown);
     }
 }
 
-std::vector<TrackUpdateMessage> TrackManager::getTrackUpdates() const {
-    std::vector<TrackUpdateMessage> updates;
+std::vector<CounterUAS::TrackUpdateMessage> TrackManager::getTrackUpdates() const {
+    std::vector<CounterUAS::TrackUpdateMessage> updates;
     updates.reserve(tracks_.size());
-    for (const auto& track : tracks_) {
+    for (const auto& track : tracks_)
         updates.push_back(track->toUpdateMessage());
-    }
     return updates;
 }
 
 uint32_t TrackManager::numActiveTracks() const {
     uint32_t count = 0;
     for (const auto& t : tracks_)
-        if (t->status() != TrackStatus::Deleted) ++count;
+        if (t->status() != TrackStatusVal::Deleted) ++count;
     return count;
 }
 
 uint32_t TrackManager::numConfirmedTracks() const {
     uint32_t count = 0;
     for (const auto& t : tracks_)
-        if (t->status() == TrackStatus::Confirmed) ++count;
+        if (t->status() == TrackStatusVal::Confirmed) ++count;
     return count;
 }
 

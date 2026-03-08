@@ -12,6 +12,55 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -O2)
 endif()
 
+# ---------------------------------------------------------------------------
+# Fast DDS (eProsima): required for IDL-generated types and DDS pub/sub
+# ---------------------------------------------------------------------------
+find_package(fastrtps REQUIRED)   # cmake package name for Fast DDS 2.x
+find_package(fastcdr  REQUIRED)
+
+# ---------------------------------------------------------------------------
+# IDL code generation — fastddsgen reads idl/messages.idl and writes into
+# ${CMAKE_BINARY_DIR}/generated/ at configure time (so downstream targets
+# can depend on the generated files).
+# ---------------------------------------------------------------------------
+find_program(FASTDDSGEN_BIN fastddsgen REQUIRED
+    HINTS /usr/bin /usr/local/bin)
+message(STATUS "fastddsgen: ${FASTDDSGEN_BIN}")
+
+set(IDL_FILE    "${CMAKE_SOURCE_DIR}/idl/messages.idl")
+set(IDL_GEN_DIR "${CMAKE_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${IDL_GEN_DIR}")
+
+set(IDL_GEN_SRCS
+    "${IDL_GEN_DIR}/messages.cxx"
+    "${IDL_GEN_DIR}/messagesPubSubTypes.cxx"
+)
+set(IDL_GEN_HDRS
+    "${IDL_GEN_DIR}/messages.h"
+    "${IDL_GEN_DIR}/messagesPubSubTypes.h"
+)
+
+add_custom_command(
+    OUTPUT  ${IDL_GEN_SRCS} ${IDL_GEN_HDRS}
+    COMMAND ${FASTDDSGEN_BIN} -replace -d "${IDL_GEN_DIR}" "${IDL_FILE}"
+    DEPENDS "${IDL_FILE}"
+    COMMENT "Generating DDS types from idl/messages.idl via fastddsgen"
+    VERBATIM
+)
+add_custom_target(generate_idl DEPENDS ${IDL_GEN_SRCS} ${IDL_GEN_HDRS})
+
+# ---------------------------------------------------------------------------
+# cuas_idl — thin library wrapping the fastddsgen output
+# Every component that needs IDL types links against this.
+# ---------------------------------------------------------------------------
+add_library(cuas_idl STATIC ${IDL_GEN_SRCS})
+add_dependencies(cuas_idl generate_idl)
+target_include_directories(cuas_idl PUBLIC
+    "${IDL_GEN_DIR}"
+    ${CMAKE_SOURCE_DIR}/include   # for transitivity only
+)
+target_link_libraries(cuas_idl PUBLIC fastrtps fastcdr)
+
 # Platform libraries
 if(WIN32)
     set(PLATFORM_LIBS ws2_32)
@@ -28,8 +77,9 @@ add_library(cuas_common STATIC
     src/common/config.cpp
     src/common/logger.cpp
     src/common/udp_socket.cpp
+    src/common/dds_participant.cpp
 )
-target_link_libraries(cuas_common PUBLIC ${PLATFORM_LIBS})
+target_link_libraries(cuas_common PUBLIC cuas_idl ${PLATFORM_LIBS})
 
 # ---------------------------------------------------------------------------
 # Receiver library
@@ -123,8 +173,6 @@ target_link_libraries(cuas_pipeline PUBLIC
 add_executable(cuas_tracker src/main.cpp)
 target_link_libraries(cuas_tracker PRIVATE cuas_pipeline)
 
-# Copy config directory next to the executable so it can be found at runtime
-# regardless of the working directory or multi-config generator (Debug/Release).
 add_custom_command(TARGET cuas_tracker POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "$<TARGET_FILE_DIR:cuas_tracker>/config"
@@ -145,7 +193,6 @@ target_link_libraries(display_module PRIVATE cuas_common)
 
 add_executable(log_extractor simulators/log_extractor/log_extractor.cpp)
 target_link_libraries(log_extractor PRIVATE cuas_common)
-# GCC 8 (e.g. MinGW) needs explicit std::filesystem link
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(log_extractor PRIVATE stdc++fs)
 endif()
@@ -168,10 +215,13 @@ add_test(NAME LogSomEomFraming COMMAND test_log_som_eom)
 install(TARGETS cuas_tracker dsp_injector display_module log_extractor
         RUNTIME DESTINATION bin)
 install(FILES config/tracker_config.json DESTINATION config)
+# IDL file installed alongside binaries so integrators can generate bindings
+# for any language without reading implementation headers.
 install(FILES idl/messages.idl DESTINATION idl)
 
 message(STATUS "=================================================")
 message(STATUS "  Counter-UAS Radar Tracker v${PROJECT_VERSION}")
 message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Platform:   ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  IDL codegen: ${FASTDDSGEN_BIN}")
 message(STATUS "=================================================")

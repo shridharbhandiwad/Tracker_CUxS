@@ -1,9 +1,6 @@
 #include "common/udp_socket.h"
-#include "common/types.h"
 #include "common/logger.h"
-#include "common/constants.h"
 #include <cstring>
-#include <vector>
 
 #ifdef _WIN32
     static bool wsaInitialized = false;
@@ -97,11 +94,13 @@ bool UdpSocket::setBufferSize(int recvSize, int sendSize) {
 
 int UdpSocket::receive(uint8_t* buffer, int maxLen) {
     if (sock_ == INVALID_SOCK) return -1;
-    int n = ::recvfrom(sock_, reinterpret_cast<char*>(buffer), maxLen, 0, nullptr, nullptr);
+    int n = ::recvfrom(sock_, reinterpret_cast<char*>(buffer), maxLen, 0,
+                       nullptr, nullptr);
     return n;
 }
 
-int UdpSocket::receive(uint8_t* buffer, int maxLen, std::string& senderIp, int& senderPort) {
+int UdpSocket::receive(uint8_t* buffer, int maxLen,
+                        std::string& senderIp, int& senderPort) {
     if (sock_ == INVALID_SOCK) return -1;
     sockaddr_in from{};
     socklen_t fromLen = sizeof(from);
@@ -110,7 +109,7 @@ int UdpSocket::receive(uint8_t* buffer, int maxLen, std::string& senderIp, int& 
     if (n > 0) {
         char ipBuf[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &from.sin_addr, ipBuf, sizeof(ipBuf));
-        senderIp = ipBuf;
+        senderIp   = ipBuf;
         senderPort = ntohs(from.sin_port);
     }
     return n;
@@ -123,7 +122,8 @@ bool UdpSocket::send(const uint8_t* data, int len) {
     return sent == len;
 }
 
-bool UdpSocket::send(const uint8_t* data, int len, const std::string& ip, int port) {
+bool UdpSocket::send(const uint8_t* data, int len,
+                      const std::string& ip, int port) {
     if (sock_ == INVALID_SOCK) return false;
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
@@ -147,239 +147,6 @@ void UdpSocket::closeSocket() {
 
 bool UdpSocket::isValid() const {
     return sock_ != INVALID_SOCK;
-}
-
-// ---------------------------------------------------------------------------
-// MessageSerializer
-// ---------------------------------------------------------------------------
-
-std::vector<uint8_t> MessageSerializer::serialize(const SPDetectionMessage& msg) {
-    size_t sz = sizeof(uint32_t) * 3 + sizeof(uint64_t) +
-                msg.numDetections * sizeof(Detection);
-    std::vector<uint8_t> buf(sz);
-    uint8_t* p = buf.data();
-
-    std::memcpy(p, &msg.messageId, 4); p += 4;
-    std::memcpy(p, &msg.dwellCount, 4); p += 4;
-    std::memcpy(p, &msg.timestamp, 8); p += 8;
-    std::memcpy(p, &msg.numDetections, 4); p += 4;
-    for (uint32_t i = 0; i < msg.numDetections; ++i) {
-        std::memcpy(p, &msg.detections[i], sizeof(Detection));
-        p += sizeof(Detection);
-    }
-    return buf;
-}
-
-bool MessageSerializer::deserialize(const uint8_t* data, int len, SPDetectionMessage& msg) {
-    if (len < 20) return false; // minimum header size
-
-    const uint8_t* p = data;
-    std::memcpy(&msg.messageId, p, 4); p += 4;
-    std::memcpy(&msg.dwellCount, p, 4); p += 4;
-    std::memcpy(&msg.timestamp, p, 8); p += 8;
-    std::memcpy(&msg.numDetections, p, 4); p += 4;
-
-    int remaining = len - 20;
-    int expected = static_cast<int>(msg.numDetections * sizeof(Detection));
-    if (remaining < expected) return false;
-
-    msg.detections.resize(msg.numDetections);
-    for (uint32_t i = 0; i < msg.numDetections; ++i) {
-        std::memcpy(&msg.detections[i], p, sizeof(Detection));
-        p += sizeof(Detection);
-    }
-    return true;
-}
-
-std::vector<uint8_t> MessageSerializer::serialize(const TrackUpdateMessage& msg) {
-    std::vector<uint8_t> buf(sizeof(TrackUpdateMessage));
-    std::memcpy(buf.data(), &msg, sizeof(TrackUpdateMessage));
-    return buf;
-}
-
-bool MessageSerializer::deserialize(const uint8_t* data, int len, TrackUpdateMessage& msg) {
-    if (len < static_cast<int>(sizeof(TrackUpdateMessage))) return false;
-    std::memcpy(&msg, data, sizeof(TrackUpdateMessage));
-    return true;
-}
-
-std::vector<uint8_t> MessageSerializer::serializeTrackTable(
-    const std::vector<TrackUpdateMessage>& tracks, uint64_t timestamp) {
-    uint32_t msgId = MSG_ID_TRACK_TABLE;
-    uint32_t numTracks = static_cast<uint32_t>(tracks.size());
-    size_t sz = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t) +
-                numTracks * sizeof(TrackUpdateMessage);
-    std::vector<uint8_t> buf(sz);
-    uint8_t* p = buf.data();
-
-    std::memcpy(p, &msgId, 4); p += 4;
-    std::memcpy(p, &timestamp, 8); p += 8;
-    std::memcpy(p, &numTracks, 4); p += 4;
-    for (auto& t : tracks) {
-        std::memcpy(p, &t, sizeof(TrackUpdateMessage));
-        p += sizeof(TrackUpdateMessage);
-    }
-    return buf;
-}
-
-bool MessageSerializer::deserializeTrackTable(
-    const uint8_t* data, int len,
-    std::vector<TrackUpdateMessage>& tracks, uint64_t& timestamp) {
-    if (len < 16) return false;
-
-    const uint8_t* p = data;
-    uint32_t msgId;
-    std::memcpy(&msgId, p, 4); p += 4;
-    if (msgId != MSG_ID_TRACK_TABLE) return false;
-
-    std::memcpy(&timestamp, p, 8); p += 8;
-    uint32_t numTracks;
-    std::memcpy(&numTracks, p, 4); p += 4;
-
-    int remaining = len - 16;
-    int expected = static_cast<int>(numTracks * sizeof(TrackUpdateMessage));
-    if (remaining < expected) return false;
-
-    tracks.resize(numTracks);
-    for (uint32_t i = 0; i < numTracks; ++i) {
-        std::memcpy(&tracks[i], p, sizeof(TrackUpdateMessage));
-        p += sizeof(TrackUpdateMessage);
-    }
-    return true;
-}
-
-// ---------------------------------------------------------------------------
-// ClusterTable serialization
-// ---------------------------------------------------------------------------
-
-std::vector<uint8_t> MessageSerializer::serializeClusterTable(
-    const std::vector<ClusterWire>& clusters, uint64_t timestamp, uint32_t dwellCount) {
-    uint32_t msgId    = MSG_ID_CLUSTER_TABLE;
-    uint32_t numItems = static_cast<uint32_t>(clusters.size());
-    size_t sz = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t) + sizeof(uint32_t)
-                + numItems * sizeof(ClusterWire);
-    std::vector<uint8_t> buf(sz);
-    uint8_t* p = buf.data();
-
-    std::memcpy(p, &msgId,      4); p += 4;
-    std::memcpy(p, &timestamp,  8); p += 8;
-    std::memcpy(p, &dwellCount, 4); p += 4;
-    std::memcpy(p, &numItems,   4); p += 4;
-    for (const auto& c : clusters) {
-        std::memcpy(p, &c, sizeof(ClusterWire));
-        p += sizeof(ClusterWire);
-    }
-    return buf;
-}
-
-bool MessageSerializer::deserializeClusterTable(
-    const uint8_t* data, int len,
-    std::vector<ClusterWire>& clusters, uint64_t& timestamp, uint32_t& dwellCount) {
-    if (len < 20) return false;
-    const uint8_t* p = data;
-    uint32_t msgId;
-    std::memcpy(&msgId, p, 4); p += 4;
-    if (msgId != MSG_ID_CLUSTER_TABLE) return false;
-    std::memcpy(&timestamp,  p, 8); p += 8;
-    std::memcpy(&dwellCount, p, 4); p += 4;
-    uint32_t numItems;
-    std::memcpy(&numItems, p, 4); p += 4;
-    int remaining = len - 20;
-    if (remaining < static_cast<int>(numItems * sizeof(ClusterWire))) return false;
-    clusters.resize(numItems);
-    for (uint32_t i = 0; i < numItems; ++i) {
-        std::memcpy(&clusters[i], p, sizeof(ClusterWire));
-        p += sizeof(ClusterWire);
-    }
-    return true;
-}
-
-// ---------------------------------------------------------------------------
-// AssocTable serialization
-// ---------------------------------------------------------------------------
-
-std::vector<uint8_t> MessageSerializer::serializeAssocTable(
-    const std::vector<AssocEntryWire>& entries, uint64_t timestamp) {
-    uint32_t msgId    = MSG_ID_ASSOC_TABLE;
-    uint32_t numItems = static_cast<uint32_t>(entries.size());
-    size_t sz = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t)
-                + numItems * sizeof(AssocEntryWire);
-    std::vector<uint8_t> buf(sz);
-    uint8_t* p = buf.data();
-
-    std::memcpy(p, &msgId,     4); p += 4;
-    std::memcpy(p, &timestamp, 8); p += 8;
-    std::memcpy(p, &numItems,  4); p += 4;
-    for (const auto& e : entries) {
-        std::memcpy(p, &e, sizeof(AssocEntryWire));
-        p += sizeof(AssocEntryWire);
-    }
-    return buf;
-}
-
-bool MessageSerializer::deserializeAssocTable(
-    const uint8_t* data, int len,
-    std::vector<AssocEntryWire>& entries, uint64_t& timestamp) {
-    if (len < 16) return false;
-    const uint8_t* p = data;
-    uint32_t msgId;
-    std::memcpy(&msgId, p, 4); p += 4;
-    if (msgId != MSG_ID_ASSOC_TABLE) return false;
-    std::memcpy(&timestamp, p, 8); p += 8;
-    uint32_t numItems;
-    std::memcpy(&numItems, p, 4); p += 4;
-    int remaining = len - 16;
-    if (remaining < static_cast<int>(numItems * sizeof(AssocEntryWire))) return false;
-    entries.resize(numItems);
-    for (uint32_t i = 0; i < numItems; ++i) {
-        std::memcpy(&entries[i], p, sizeof(AssocEntryWire));
-        p += sizeof(AssocEntryWire);
-    }
-    return true;
-}
-
-// ---------------------------------------------------------------------------
-// PredictedTable serialization
-// ---------------------------------------------------------------------------
-
-std::vector<uint8_t> MessageSerializer::serializePredictedTable(
-    const std::vector<PredictedEntryWire>& entries, uint64_t timestamp) {
-    uint32_t msgId    = MSG_ID_PREDICTED_TABLE;
-    uint32_t numItems = static_cast<uint32_t>(entries.size());
-    size_t sz = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t)
-                + numItems * sizeof(PredictedEntryWire);
-    std::vector<uint8_t> buf(sz);
-    uint8_t* p = buf.data();
-
-    std::memcpy(p, &msgId,     4); p += 4;
-    std::memcpy(p, &timestamp, 8); p += 8;
-    std::memcpy(p, &numItems,  4); p += 4;
-    for (const auto& e : entries) {
-        std::memcpy(p, &e, sizeof(PredictedEntryWire));
-        p += sizeof(PredictedEntryWire);
-    }
-    return buf;
-}
-
-bool MessageSerializer::deserializePredictedTable(
-    const uint8_t* data, int len,
-    std::vector<PredictedEntryWire>& entries, uint64_t& timestamp) {
-    if (len < 16) return false;
-    const uint8_t* p = data;
-    uint32_t msgId;
-    std::memcpy(&msgId, p, 4); p += 4;
-    if (msgId != MSG_ID_PREDICTED_TABLE) return false;
-    std::memcpy(&timestamp, p, 8); p += 8;
-    uint32_t numItems;
-    std::memcpy(&numItems, p, 4); p += 4;
-    int remaining = len - 16;
-    if (remaining < static_cast<int>(numItems * sizeof(PredictedEntryWire))) return false;
-    entries.resize(numItems);
-    for (uint32_t i = 0; i < numItems; ++i) {
-        std::memcpy(&entries[i], p, sizeof(PredictedEntryWire));
-        p += sizeof(PredictedEntryWire);
-    }
-    return true;
 }
 
 } // namespace cuas

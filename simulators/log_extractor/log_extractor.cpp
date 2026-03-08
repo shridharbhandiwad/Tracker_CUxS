@@ -13,8 +13,10 @@
 
 #include "common/types.h"
 #include "common/logger.h"
-#include "common/udp_socket.h"
 #include "common/constants.h"
+#include "common/dds_participant.h"
+
+#include <fastdds/dds/publisher/DataWriter.hpp>
 
 #include <iostream>
 #include <iomanip>
@@ -149,13 +151,23 @@ void printExtractedRecord(const cuas::LogRecordHeader& hdr,
             break;
         }
         case cuas::LogRecordType::TrackSent: {
-            if (payload.size() >= sizeof(cuas::TrackUpdateMessage)) {
-                cuas::TrackUpdateMessage msg;
-                std::memcpy(&msg, p, sizeof(msg));
-                std::cout << "Track=" << msg.trackId
-                          << " R=" << std::fixed << std::setprecision(1) << msg.range
-                          << " Az=" << std::setprecision(3) << msg.azimuth * cuas::RAD2DEG
-                          << " El=" << msg.elevation * cuas::RAD2DEG;
+            // Layout: msgId(4) trkId(4) ts(8) stat(4) cls(4) range(8) az(8) el(8)
+            //         rr(8) x(8) y(8) z(8) vx(8) vy(8) vz(8) qual(8) hits(4) miss(4) age(4)
+            if (payload.size() >= 24) {
+                uint32_t trkId; uint32_t stat;
+                double range, az, el;
+                p += 4; // skip msgId
+                std::memcpy(&trkId, p, 4); p += 4;
+                p += 8; // skip ts
+                std::memcpy(&stat, p, 4); p += 4;
+                p += 4; // skip cls
+                std::memcpy(&range, p, 8); p += 8;
+                std::memcpy(&az,    p, 8); p += 8;
+                std::memcpy(&el,    p, 8);
+                std::cout << "Track=" << trkId
+                          << " R=" << std::fixed << std::setprecision(1) << range
+                          << " Az=" << std::setprecision(3) << az * cuas::RAD2DEG
+                          << " El=" << el * cuas::RAD2DEG;
             }
             break;
         }
@@ -235,20 +247,21 @@ int extractMode(const std::string& filename, bool verbose) {
     return 0;
 }
 
-int replayMode(const std::string& filename, const std::string& targetIp,
-                int targetPort, double speedFactor) {
+int replayMode(const std::string& filename, const std::string& /*targetIp*/,
+               int /*targetPort*/, double speedFactor) {
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "ERROR: Cannot open file: " << filename << std::endl;
         return 1;
     }
 
-    cuas::UdpSocket::initNetwork();
-    cuas::UdpSocket socket;
-    socket.setDestination(targetIp, targetPort);
+    // Publish replayed detections on the DDS "SPDetection" topic.
+    cuas::CuasDdsParticipant participant;
+    auto* writer = participant.makeWriter<CounterUAS::SPDetectionMessage>(
+                       cuas::TOPIC_SP_DETECTION);
 
     std::cout << "=== Replay Mode ===" << std::endl;
-    std::cout << "Target: " << targetIp << ":" << targetPort << std::endl;
+    std::cout << "DDS topic: " << cuas::TOPIC_SP_DETECTION << "  domain: 0" << std::endl;
     std::cout << "Speed:  " << speedFactor << "x" << std::endl;
     std::cout << std::string(80, '-') << std::endl;
 
@@ -283,39 +296,44 @@ int replayMode(const std::string& filename, const std::string& targetIp,
             }
             prevTs = hdr.timestamp;
 
-            // Reconstruct SPDetectionMessage from payload
+                // Reconstruct SPDetectionMessage from payload and publish via DDS.
             if (payload.size() >= 20) {
-                cuas::SPDetectionMessage msg;
                 const uint8_t* p = payload.data();
-                std::memcpy(&msg.messageId, p, 4); p += 4;
-                std::memcpy(&msg.dwellCount, p, 4); p += 4;
-                std::memcpy(&msg.timestamp, p, 8); p += 8;
-                std::memcpy(&msg.numDetections, p, 4); p += 4;
+                uint32_t msgId, dwellCount, numDets; uint64_t ts;
+                std::memcpy(&msgId,      p, 4); p += 4;
+                std::memcpy(&dwellCount, p, 4); p += 4;
+                std::memcpy(&ts,         p, 8); p += 8;
+                std::memcpy(&numDets,    p, 4); p += 4;
 
-                // Update timestamp to now
-                msg.timestamp = cuas::nowMicros();
+                CounterUAS::SPDetectionMessage idlMsg;
+                idlMsg.messageId(msgId);
+                idlMsg.dwellCount(dwellCount);
+                idlMsg.timestamp(cuas::nowMicros()); // update to current time
+                idlMsg.numDetections(numDets);
 
-                msg.detections.resize(msg.numDetections);
-                for (uint32_t i = 0; i < msg.numDetections; ++i) {
-                    std::memcpy(&msg.detections[i], p, sizeof(cuas::Detection));
-                    p += sizeof(cuas::Detection);
+                std::vector<CounterUAS::DetectionData> dets;
+                dets.reserve(numDets);
+                for (uint32_t i = 0; i < numDets; ++i) {
+                    if (p + sizeof(cuas::Detection) > payload.data() + payload.size()) break;
+                    cuas::Detection d;
+                    std::memcpy(&d, p, sizeof(d)); p += sizeof(d);
+                    dets.push_back(cuas::toIDL(d));
                 }
+                idlMsg.detections(dets);
 
-                auto data = cuas::MessageSerializer::serialize(msg);
-                socket.send(data.data(), static_cast<int>(data.size()));
+                writer->write(&idlMsg);
                 ++sentCount;
 
                 if (sentCount % 50 == 0) {
                     std::cout << "Replayed " << sentCount << " dwells (dwell "
-                              << msg.dwellCount << ", " << msg.numDetections
+                              << dwellCount << ", " << numDets
                               << " dets)" << std::endl;
                 }
             }
         }
     }
 
-    std::cout << "Replay complete. Sent " << sentCount << " detection messages." << std::endl;
-    cuas::UdpSocket::cleanupNetwork();
+    std::cout << "Replay complete. Published " << sentCount << " detection messages on DDS." << std::endl;
     return 0;
 }
 
@@ -347,27 +365,39 @@ int csvMode(const std::string& filename) {
 
         auto type = static_cast<cuas::LogRecordType>(hdr.recordType);
 
-        if (type == cuas::LogRecordType::TrackSent &&
-            payload.size() >= sizeof(cuas::TrackUpdateMessage)) {
-            cuas::TrackUpdateMessage msg;
-            std::memcpy(&msg, payload.data(), sizeof(msg));
+        if (type == cuas::LogRecordType::TrackSent && payload.size() >= 108u) {
+            // Layout: msgId(4) trkId(4) ts(8) stat(4) cls(4) range(8) az(8) el(8)
+            //         rr(8) x(8) y(8) z(8) vx(8) vy(8) vz(8) qual(8) hits(4) miss(4) age(4)
+            const uint8_t* pm = payload.data();
+            uint32_t trkId, stat, cls, hits, miss, age;
+            double range, az, el, rr, x, y, z, vx, vy, vz, qual;
+            pm+=4; std::memcpy(&trkId,pm,4);pm+=4; pm+=8;
+            std::memcpy(&stat,pm,4);pm+=4; std::memcpy(&cls,pm,4);pm+=4;
+            std::memcpy(&range,pm,8);pm+=8; std::memcpy(&az,pm,8);pm+=8;
+            std::memcpy(&el,pm,8);pm+=8;   std::memcpy(&rr,pm,8);pm+=8;
+            std::memcpy(&x,pm,8);pm+=8;    std::memcpy(&y,pm,8);pm+=8;
+            std::memcpy(&z,pm,8);pm+=8;    std::memcpy(&vx,pm,8);pm+=8;
+            std::memcpy(&vy,pm,8);pm+=8;   std::memcpy(&vz,pm,8);pm+=8;
+            std::memcpy(&qual,pm,8);pm+=8;
+            std::memcpy(&hits,pm,4);pm+=4; std::memcpy(&miss,pm,4);pm+=4;
+            std::memcpy(&age,pm,4);
 
             std::cout << hdr.timestamp << ","
                       << recordTypeName(type) << ","
-                      << msg.trackId << ","
+                      << trkId << ","
                       << std::fixed << std::setprecision(2)
-                      << msg.range << ","
-                      << msg.azimuth * cuas::RAD2DEG << ","
-                      << msg.elevation * cuas::RAD2DEG << ","
-                      << msg.rangeRate << ","
-                      << msg.x << "," << msg.y << "," << msg.z << ","
-                      << msg.vx << "," << msg.vy << "," << msg.vz << ","
-                      << msg.trackQuality << ","
-                      << msg.hitCount << ","
-                      << msg.missCount << ","
-                      << msg.age << ","
-                      << static_cast<int>(msg.status) << ","
-                      << static_cast<int>(msg.classification)
+                      << range << ","
+                      << az * cuas::RAD2DEG << ","
+                      << el * cuas::RAD2DEG << ","
+                      << rr << ","
+                      << x << "," << y << "," << z << ","
+                      << vx << "," << vy << "," << vz << ","
+                      << qual << ","
+                      << hits << ","
+                      << miss << ","
+                      << age << ","
+                      << stat << ","
+                      << cls
                       << std::endl;
         }
     }
@@ -639,30 +669,41 @@ int datMode(const std::string& filename, const std::string& outDir) {
                 break;
             }
             case cuas::LogRecordType::TrackSent: {
-                if (payload.size() < sizeof(cuas::TrackUpdateMessage)) break;
-                cuas::TrackUpdateMessage msg;
-                std::memcpy(&msg, p, sizeof(msg));
+                if (payload.size() < 108u) break;
+                // Layout: msgId(4) trkId(4) ts(8) stat(4) cls(4)
+                //         range(8) az(8) el(8) rr(8) x(8) y(8) z(8)
+                //         vx(8) vy(8) vz(8) qual(8) hits(4) miss(4) age(4)
+                uint32_t trkId, stat, cls, hits, miss, age;
+                double range, az, el, rr, mx, my, mz, mvx, mvy, mvz, qual;
+                p+=4; std::memcpy(&trkId,p,4);p+=4; p+=8;
+                std::memcpy(&stat,p,4);p+=4; std::memcpy(&cls,p,4);p+=4;
+                std::memcpy(&range,p,8);p+=8; std::memcpy(&az,p,8);p+=8;
+                std::memcpy(&el,p,8);p+=8;   std::memcpy(&rr,p,8);p+=8;
+                std::memcpy(&mx,p,8);p+=8;   std::memcpy(&my,p,8);p+=8;
+                std::memcpy(&mz,p,8);p+=8;   std::memcpy(&mvx,p,8);p+=8;
+                std::memcpy(&mvy,p,8);p+=8;  std::memcpy(&mvz,p,8);p+=8;
+                std::memcpy(&qual,p,8);p+=8;
+                std::memcpy(&hits,p,4);p+=4; std::memcpy(&miss,p,4);p+=4;
+                std::memcpy(&age,p,4);
                 fSent << std::fixed << std::setprecision(4)
-                      << hdr.timestamp << "\t" << msg.trackId
-                      << "\t" << static_cast<int>(msg.status)
-                      << "\t" << static_cast<int>(msg.classification)
-                      << "\t" << msg.range
-                      << "\t" << msg.azimuth * cuas::RAD2DEG
-                      << "\t" << msg.elevation * cuas::RAD2DEG
-                      << "\t" << msg.rangeRate
-                      << "\t" << msg.x << "\t" << msg.y << "\t" << msg.z
-                      << "\t" << msg.vx << "\t" << msg.vy << "\t" << msg.vz
-                      << "\t" << msg.trackQuality
-                      << "\t" << msg.hitCount << "\t" << msg.missCount << "\t" << msg.age << "\n";
+                      << hdr.timestamp << "\t" << trkId
+                      << "\t" << stat << "\t" << cls
+                      << "\t" << range
+                      << "\t" << az * cuas::RAD2DEG
+                      << "\t" << el * cuas::RAD2DEG
+                      << "\t" << rr
+                      << "\t" << mx << "\t" << my << "\t" << mz
+                      << "\t" << mvx << "\t" << mvy << "\t" << mvz
+                      << "\t" << qual
+                      << "\t" << hits << "\t" << miss << "\t" << age << "\n";
                 fCombined << std::fixed << std::setprecision(4)
                           << "sender\t" << currentDwell << "\t" << hdr.timestamp << "\t"
-                          << "\t\t" << msg.range << "\t" << msg.azimuth * cuas::RAD2DEG
-                          << "\t" << msg.elevation * cuas::RAD2DEG << "\t" << msg.rangeRate << "\t\t\t\t\t\t\t\t\t\t"
-                          << msg.trackId << "\t" << static_cast<int>(msg.status)
-                          << "\t" << static_cast<int>(msg.classification) << "\t"
-                          << msg.x << "\t" << msg.y << "\t" << msg.z
-                          << "\t" << msg.vx << "\t" << msg.vy << "\t" << msg.vz << "\t\t\t\t\t"
-                          << msg.trackQuality << "\t" << msg.hitCount << "\t" << msg.missCount << "\t" << msg.age << "\n";
+                          << "\t\t" << range << "\t" << az * cuas::RAD2DEG
+                          << "\t" << el * cuas::RAD2DEG << "\t" << rr << "\t\t\t\t\t\t\t\t\t\t"
+                          << trkId << "\t" << stat << "\t" << cls << "\t"
+                          << mx << "\t" << my << "\t" << mz << "\t"
+                          << mvx << "\t" << mvy << "\t" << mvz << "\t\t\t\t\t"
+                          << qual << "\t" << hits << "\t" << miss << "\t" << age << "\n";
                 break;
             }
             default: break;
