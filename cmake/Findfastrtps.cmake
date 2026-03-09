@@ -61,6 +61,7 @@ if(WIN32)
 else()
     foreach(_candidate
             /usr/local
+            /opt/homebrew
             /opt/ros/humble
             /opt/ros/iron
             /opt/ros/jazzy
@@ -109,6 +110,7 @@ find_path(fastrtps_INCLUDE_DIR
     PATHS
         /usr/include
         /usr/local/include
+        /opt/homebrew/include
     DOC "Fast DDS (fastrtps) include directory"
 )
 
@@ -124,17 +126,24 @@ find_library(fastrtps_LIBRARY
     PATHS
         /usr/lib
         /usr/local/lib
+        /opt/homebrew/lib
         /usr/lib/x86_64-linux-gnu
         /usr/lib/aarch64-linux-gnu
     DOC "Fast DDS (fastrtps) library"
 )
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(fastrtps
-    REQUIRED_VARS fastrtps_LIBRARY fastrtps_INCLUDE_DIR
-    FAIL_MESSAGE
-        "Could not find Fast DDS (fastrtps). Install eProsima Fast DDS or set FASTRTPS_HOME / FASTDDS_HOME to the installation prefix, or point fastrtps_DIR at the directory containing fastrtpsConfig.cmake."
-)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.21")
+    find_package_handle_standard_args(fastrtps
+        REQUIRED_VARS fastrtps_LIBRARY fastrtps_INCLUDE_DIR
+        REASON_FAILURE_MESSAGE
+            "Install eProsima Fast DDS or set FASTRTPS_HOME / FASTDDS_HOME to the installation prefix, or point fastrtps_DIR at the directory containing fastrtpsConfig.cmake."
+    )
+else()
+    find_package_handle_standard_args(fastrtps
+        REQUIRED_VARS fastrtps_LIBRARY fastrtps_INCLUDE_DIR
+    )
+endif()
 
 if(fastrtps_FOUND AND NOT TARGET fastrtps)
     add_library(fastrtps UNKNOWN IMPORTED)

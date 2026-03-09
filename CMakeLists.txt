@@ -46,6 +46,8 @@ else()
     foreach(_prefix
             "$ENV{FASTRTPS_HOME}"
             "$ENV{FASTDDS_HOME}"
+            "/usr/local"
+            "/opt/homebrew"
             "/opt/ros/humble"
             "/opt/ros/iron"
             "/opt/ros/jazzy"
