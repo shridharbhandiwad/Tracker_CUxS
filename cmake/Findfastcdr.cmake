@@ -14,8 +14,14 @@
 # The module honours the following environment / cache variables:
 #
 #   FASTRTPS_HOME   – root of a Fast DDS installation (fastcdr lives here too)
-#   FASTDDS_HOME    – alias accepted by newer eProsima installers
+#   FASTDDS_HOME    – alias accepted by newer eProsima installers (2.14+, 3.x)
 #   fastcdr_DIR     – directory containing fastcdrConfig.cmake (CMake cache)
+#
+# Windows eProsima installer paths supported
+# ------------------------------------------
+#   Fast DDS 2.x  → "C:\Program Files\eProsima\fastrtps <ver>"
+#   Fast DDS 2.14+→ may also use  "C:\Program Files\eProsima\Fast DDS <ver>"
+#   Fast DDS 3.x  → "C:\Program Files\eProsima\Fast DDS <ver>"
 #
 # Imported target created (when not already defined by the config file)
 # -----------------------------------------------------------------------
@@ -49,9 +55,22 @@ if(WIN32)
             "C:/Program Files/eProsima/fastrtps 2.11"
             "C:/Program Files/eProsima/fastrtps 2.12"
             "C:/Program Files/eProsima/fastrtps 2.13"
+            "C:/Program Files/eProsima/fastrtps 2.14"
             "C:/Program Files/eProsima/fastrtps"
-            "C:/eProsima/fastrtps"
+            "C:/Program Files/eProsima/Fast DDS 2"
+            "C:/Program Files/eProsima/Fast DDS 2.14"
+            "C:/Program Files/eProsima/Fast DDS 2.14.0"
+            "C:/Program Files/eProsima/Fast DDS 3"
+            "C:/Program Files/eProsima/Fast DDS 3.0"
+            "C:/Program Files/eProsima/Fast DDS 3.0.0"
+            "C:/Program Files/eProsima/Fast DDS 3.1"
+            "C:/Program Files/eProsima/Fast DDS 3.1.0"
+            "C:/Program Files/eProsima/Fast DDS 3.2"
+            "C:/Program Files/eProsima/Fast DDS 3.2.0"
+            "C:/Program Files/eProsima/Fast DDS"
             "C:/Program Files/eProsima/fastcdr"
+            "C:/eProsima/fastrtps"
+            "C:/eProsima/Fast DDS"
             "C:/eProsima/fastcdr"
     )
         if(EXISTS "${_candidate}")
@@ -65,6 +84,7 @@ else()
             /opt/ros/humble
             /opt/ros/iron
             /opt/ros/jazzy
+            /opt/ros/rolling
     )
         if(EXISTS "${_candidate}")
             list(APPEND _fastcdr_PREFIX_HINTS "${_candidate}")
@@ -75,16 +95,36 @@ endif()
 # ---------------------------------------------------------------------------
 # 1. Try the upstream config-file package
 # ---------------------------------------------------------------------------
+
+set(_fastcdr_CMAKE_SUFFIXES
+    cmake
+    lib/cmake/fastcdr
+    lib/cmake
+    share/fastcdr/cmake
+    share/cmake/fastcdr
+)
+
+foreach(_p ${_fastcdr_PREFIX_HINTS})
+    foreach(_sub
+            "lib/x64/Release"
+            "lib/x64/Debug"
+            "lib/x64"
+            "lib/Win32/Release"
+            "lib/Win32/Debug"
+            "lib/Win32"
+    )
+        if(EXISTS "${_p}/${_sub}")
+            list(APPEND _fastcdr_CMAKE_SUFFIXES "${_sub}/cmake" "${_sub}")
+        endif()
+    endforeach()
+endforeach()
+
 find_package(fastcdr QUIET CONFIG
     HINTS
         "${fastcdr_DIR}"
         ${_fastcdr_PREFIX_HINTS}
     PATH_SUFFIXES
-        cmake
-        lib/cmake/fastcdr
-        lib/cmake
-        share/fastcdr/cmake
-        share/cmake/fastcdr
+        ${_fastcdr_CMAKE_SUFFIXES}
 )
 
 if(fastcdr_FOUND)
@@ -95,9 +135,20 @@ endif()
 # ---------------------------------------------------------------------------
 # 2. Manual header + library search (fallback)
 # ---------------------------------------------------------------------------
-set(_fastcdr_INCLUDE_SUFFIXES "")
+set(_fastcdr_INCLUDE_HINTS "")
+set(_fastcdr_LIB_HINTS "")
+
 foreach(_p ${_fastcdr_PREFIX_HINTS})
-    list(APPEND _fastcdr_INCLUDE_SUFFIXES "${_p}/include")
+    list(APPEND _fastcdr_INCLUDE_HINTS "${_p}/include")
+    list(APPEND _fastcdr_LIB_HINTS
+        "${_p}/lib"
+        "${_p}/lib/x64/Release"
+        "${_p}/lib/x64/Debug"
+        "${_p}/lib/x64"
+        "${_p}/lib/Win32/Release"
+        "${_p}/lib/Win32/Debug"
+        "${_p}/lib/Win32"
+    )
 endforeach()
 
 find_path(fastcdr_INCLUDE_DIR
@@ -105,7 +156,7 @@ find_path(fastcdr_INCLUDE_DIR
         fastcdr/Cdr.h
         fastcdr/cdr/fixed_size_string.hpp
     HINTS
-        ${_fastcdr_INCLUDE_SUFFIXES}
+        ${_fastcdr_INCLUDE_HINTS}
     PATHS
         /usr/include
         /usr/local/include
@@ -113,15 +164,12 @@ find_path(fastcdr_INCLUDE_DIR
     DOC "Fast CDR include directory"
 )
 
-set(_fastcdr_LIB_SUFFIXES "")
-foreach(_p ${_fastcdr_PREFIX_HINTS})
-    list(APPEND _fastcdr_LIB_SUFFIXES "${_p}/lib")
-endforeach()
-
 find_library(fastcdr_LIBRARY
-    NAMES fastcdr
+    NAMES
+        fastcdr
+        fastcdr-2       # some builds suffix with API version
     HINTS
-        ${_fastcdr_LIB_SUFFIXES}
+        ${_fastcdr_LIB_HINTS}
     PATHS
         /usr/lib
         /usr/local/lib

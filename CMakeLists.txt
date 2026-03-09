@@ -26,6 +26,8 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 # Override / extend by passing -DCMAKE_PREFIX_PATH=<path> to cmake, or by
 # setting the FASTRTPS_HOME or FASTDDS_HOME environment variables.
 if(WIN32)
+    # Covers both the legacy "fastrtps <ver>" naming (Fast DDS 2.x) and the
+    # newer "Fast DDS <ver>" naming used by Fast DDS 2.14+ and 3.x installers.
     foreach(_prefix
             "$ENV{FASTRTPS_HOME}"
             "$ENV{FASTDDS_HOME}"
@@ -35,8 +37,21 @@ if(WIN32)
             "C:/Program Files/eProsima/fastrtps 2.11"
             "C:/Program Files/eProsima/fastrtps 2.12"
             "C:/Program Files/eProsima/fastrtps 2.13"
+            "C:/Program Files/eProsima/fastrtps 2.14"
             "C:/Program Files/eProsima/fastrtps"
+            "C:/Program Files/eProsima/Fast DDS 2"
+            "C:/Program Files/eProsima/Fast DDS 2.14"
+            "C:/Program Files/eProsima/Fast DDS 2.14.0"
+            "C:/Program Files/eProsima/Fast DDS 3"
+            "C:/Program Files/eProsima/Fast DDS 3.0"
+            "C:/Program Files/eProsima/Fast DDS 3.0.0"
+            "C:/Program Files/eProsima/Fast DDS 3.1"
+            "C:/Program Files/eProsima/Fast DDS 3.1.0"
+            "C:/Program Files/eProsima/Fast DDS 3.2"
+            "C:/Program Files/eProsima/Fast DDS 3.2.0"
+            "C:/Program Files/eProsima/Fast DDS"
             "C:/eProsima/fastrtps"
+            "C:/eProsima/Fast DDS"
     )
         if(EXISTS "${_prefix}")
             list(APPEND CMAKE_PREFIX_PATH "${_prefix}")
@@ -51,6 +66,7 @@ else()
             "/opt/ros/humble"
             "/opt/ros/iron"
             "/opt/ros/jazzy"
+            "/opt/ros/rolling"
     )
         if(EXISTS "${_prefix}")
             list(APPEND CMAKE_PREFIX_PATH "${_prefix}")
@@ -69,7 +85,17 @@ find_package(fastcdr  REQUIRED)
 # ${CMAKE_BINARY_DIR}/generated/ at configure time (so downstream targets
 # can depend on the generated files).
 # ---------------------------------------------------------------------------
-find_program(FASTDDSGEN_BIN fastddsgen
+# On Windows the eProsima installer ships fastddsgen as a .bat wrapper;
+# searching for "fastddsgen" finds it on PATH, but we also probe all known
+# version-specific bin/ directories so an un-PATH'd install still works.
+if(WIN32)
+    set(_fastddsgen_names fastddsgen fastddsgen.bat)
+else()
+    set(_fastddsgen_names fastddsgen)
+endif()
+
+find_program(FASTDDSGEN_BIN
+    NAMES ${_fastddsgen_names}
     HINTS
         "$ENV{FASTRTPS_HOME}/bin"
         "$ENV{FASTDDS_HOME}/bin"
@@ -79,8 +105,21 @@ find_program(FASTDDSGEN_BIN fastddsgen
         "C:/Program Files/eProsima/fastrtps 2.11/bin"
         "C:/Program Files/eProsima/fastrtps 2.12/bin"
         "C:/Program Files/eProsima/fastrtps 2.13/bin"
+        "C:/Program Files/eProsima/fastrtps 2.14/bin"
         "C:/Program Files/eProsima/fastrtps/bin"
+        "C:/Program Files/eProsima/Fast DDS 2/bin"
+        "C:/Program Files/eProsima/Fast DDS 2.14/bin"
+        "C:/Program Files/eProsima/Fast DDS 2.14.0/bin"
+        "C:/Program Files/eProsima/Fast DDS 3/bin"
+        "C:/Program Files/eProsima/Fast DDS 3.0/bin"
+        "C:/Program Files/eProsima/Fast DDS 3.0.0/bin"
+        "C:/Program Files/eProsima/Fast DDS 3.1/bin"
+        "C:/Program Files/eProsima/Fast DDS 3.1.0/bin"
+        "C:/Program Files/eProsima/Fast DDS 3.2/bin"
+        "C:/Program Files/eProsima/Fast DDS 3.2.0/bin"
+        "C:/Program Files/eProsima/Fast DDS/bin"
         "C:/eProsima/fastrtps/bin"
+        "C:/eProsima/Fast DDS/bin"
         /usr/bin
         /usr/local/bin
 )
