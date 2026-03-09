@@ -19,48 +19,68 @@ endif()
 # ---------------------------------------------------------------------------
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
-# Probe well-known eProsima Fast DDS installation prefixes so that
+# Probe eProsima Fast DDS installation prefixes so that
 # find_package(fastrtps) / find_package(fastcdr) can locate the upstream
 # config files without requiring the user to set CMAKE_PREFIX_PATH manually.
 #
 # Override / extend by passing -DCMAKE_PREFIX_PATH=<path> to cmake, or by
-# setting the FASTRTPS_HOME or FASTDDS_HOME environment variables.
+# setting FASTRTPS_HOME, FASTDDS_HOME, FASTRTPS_ROOT, or FASTDDS_ROOT.
 if(WIN32)
-    # Covers both the legacy "fastrtps <ver>" naming (Fast DDS 2.x) and the
-    # newer "Fast DDS <ver>" naming used by Fast DDS 2.14+ and 3.x installers.
-    foreach(_prefix
-            "$ENV{FASTRTPS_HOME}"
-            "$ENV{FASTDDS_HOME}"
-            "C:/Program Files/eProsima/fastrtps 2"
-            "C:/Program Files/eProsima/fastrtps 2.6"
-            "C:/Program Files/eProsima/fastrtps 2.10"
-            "C:/Program Files/eProsima/fastrtps 2.11"
-            "C:/Program Files/eProsima/fastrtps 2.12"
-            "C:/Program Files/eProsima/fastrtps 2.13"
-            "C:/Program Files/eProsima/fastrtps 2.14"
-            "C:/Program Files/eProsima/fastrtps"
-            "C:/Program Files/eProsima/Fast DDS 2"
-            "C:/Program Files/eProsima/Fast DDS 2.14"
-            "C:/Program Files/eProsima/Fast DDS 2.14.0"
-            "C:/Program Files/eProsima/Fast DDS 3"
-            "C:/Program Files/eProsima/Fast DDS 3.0"
-            "C:/Program Files/eProsima/Fast DDS 3.0.0"
-            "C:/Program Files/eProsima/Fast DDS 3.1"
-            "C:/Program Files/eProsima/Fast DDS 3.1.0"
-            "C:/Program Files/eProsima/Fast DDS 3.2"
-            "C:/Program Files/eProsima/Fast DDS 3.2.0"
-            "C:/Program Files/eProsima/Fast DDS"
-            "C:/eProsima/fastrtps"
-            "C:/eProsima/Fast DDS"
-    )
-        if(EXISTS "${_prefix}")
-            list(APPEND CMAKE_PREFIX_PATH "${_prefix}")
+    # Env-var hints (any of the four conventional names is accepted).
+    foreach(_env_var FASTRTPS_HOME FASTDDS_HOME FASTRTPS_ROOT FASTDDS_ROOT)
+        if(DEFINED ENV{${_env_var}} AND EXISTS "$ENV{${_env_var}}")
+            list(APPEND CMAKE_PREFIX_PATH "$ENV{${_env_var}}")
         endif()
     endforeach()
+
+    # Resolve %ProgramFiles% so the path is correct on non-C: systems.
+    set(_pf "$ENV{ProgramFiles}")
+    if(NOT _pf)
+        set(_pf "C:/Program Files")
+    endif()
+    file(TO_CMAKE_PATH "${_pf}" _pf)
+
+    # Glob all installed Fast DDS / fastrtps versions automatically rather than
+    # maintaining a hard-coded version list that goes stale with each release.
+    foreach(_base "${_pf}/eProsima" "C:/eProsima")
+        if(NOT IS_DIRECTORY "${_base}")
+            continue()
+        endif()
+        file(GLOB _cml_eprosima_dirs LIST_DIRECTORIES true
+            "${_base}/fastrtps*"
+            "${_base}/Fast DDS*"
+        )
+        foreach(_d ${_cml_eprosima_dirs})
+            if(IS_DIRECTORY "${_d}")
+                list(APPEND CMAKE_PREFIX_PATH "${_d}")
+            endif()
+        endforeach()
+        list(APPEND CMAKE_PREFIX_PATH "${_base}")
+    endforeach()
+    unset(_pf)
+
+    # User-local (non-admin) installs.
+    if(DEFINED ENV{LOCALAPPDATA})
+        file(TO_CMAKE_PATH "$ENV{LOCALAPPDATA}" _localappdata)
+        if(IS_DIRECTORY "${_localappdata}/eProsima")
+            file(GLOB _cml_user_dirs LIST_DIRECTORIES true
+                "${_localappdata}/eProsima/fastrtps*"
+                "${_localappdata}/eProsima/Fast DDS*"
+            )
+            foreach(_d ${_cml_user_dirs})
+                if(IS_DIRECTORY "${_d}")
+                    list(APPEND CMAKE_PREFIX_PATH "${_d}")
+                endif()
+            endforeach()
+        endif()
+        unset(_localappdata)
+    endif()
 else()
     foreach(_prefix
             "$ENV{FASTRTPS_HOME}"
             "$ENV{FASTDDS_HOME}"
+            "$ENV{FASTRTPS_ROOT}"
+            "$ENV{FASTDDS_ROOT}"
             "/usr/local"
             "/opt/homebrew"
             "/opt/ros/humble"
