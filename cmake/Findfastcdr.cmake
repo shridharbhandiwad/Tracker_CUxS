@@ -61,6 +61,7 @@ if(WIN32)
 else()
     foreach(_candidate
             /usr/local
+            /opt/homebrew
             /opt/ros/humble
             /opt/ros/iron
             /opt/ros/jazzy
@@ -108,6 +109,7 @@ find_path(fastcdr_INCLUDE_DIR
     PATHS
         /usr/include
         /usr/local/include
+        /opt/homebrew/include
     DOC "Fast CDR include directory"
 )
 
@@ -123,20 +125,24 @@ find_library(fastcdr_LIBRARY
     PATHS
         /usr/lib
         /usr/local/lib
+        /opt/homebrew/lib
         /usr/lib/x86_64-linux-gnu
         /usr/lib/aarch64-linux-gnu
     DOC "Fast CDR library"
 )
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(fastcdr
-    REQUIRED_VARS fastcdr_LIBRARY fastcdr_INCLUDE_DIR
-    FAIL_MESSAGE
-        "Could not find Fast CDR (fastcdr).  Install eProsima Fast DDS (which "
-        "bundles fastcdr) or set FASTRTPS_HOME / FASTDDS_HOME to the "
-        "installation prefix, or point fastcdr_DIR at the directory "
-        "containing fastcdrConfig.cmake."
-)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.21")
+    find_package_handle_standard_args(fastcdr
+        REQUIRED_VARS fastcdr_LIBRARY fastcdr_INCLUDE_DIR
+        REASON_FAILURE_MESSAGE
+            "Install eProsima Fast DDS (which bundles fastcdr) or set FASTRTPS_HOME / FASTDDS_HOME to the installation prefix, or point fastcdr_DIR at the directory containing fastcdrConfig.cmake."
+    )
+else()
+    find_package_handle_standard_args(fastcdr
+        REQUIRED_VARS fastcdr_LIBRARY fastcdr_INCLUDE_DIR
+    )
+endif()
 
 if(fastcdr_FOUND AND NOT TARGET fastcdr)
     add_library(fastcdr UNKNOWN IMPORTED)
