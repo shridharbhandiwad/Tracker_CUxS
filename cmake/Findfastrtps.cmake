@@ -15,13 +15,17 @@
 #
 #   FASTRTPS_HOME   – root of a Fast DDS 2.x installation
 #   FASTDDS_HOME    – alias accepted by newer eProsima installers (2.14+, 3.x)
+#   FASTRTPS_ROOT   – CMake-conventional alias for FASTRTPS_HOME
+#   FASTDDS_ROOT    – CMake-conventional alias for FASTDDS_HOME
 #   fastrtps_DIR    – directory containing fastrtpsConfig.cmake (CMake cache)
 #
-# Windows eProsima installer paths supported
-# ------------------------------------------
-#   Fast DDS 2.x  → "C:\Program Files\eProsima\fastrtps <ver>"
-#   Fast DDS 2.14+→ may also use  "C:\Program Files\eProsima\Fast DDS <ver>"
-#   Fast DDS 3.x  → "C:\Program Files\eProsima\Fast DDS <ver>"
+# Windows discovery
+# -----------------
+#   All subdirectories of %ProgramFiles%\eProsima\ and C:\eProsima\ matching
+#   "fastrtps*" or "Fast DDS*" are probed automatically, so any installed
+#   version (present or future) is found without hard-coding version numbers.
+#   User-local (non-admin) installs under %LOCALAPPDATA%\eProsima\ are also
+#   searched.
 #
 # Imported target created (when not already defined by the config file)
 # -----------------------------------------------------------------------
@@ -41,43 +45,57 @@ cmake_policy(SET CMP0057 NEW)   # IN_LIST support
 # ---------------------------------------------------------------------------
 set(_fastrtps_PREFIX_HINTS)
 
-foreach(_env_var FASTRTPS_HOME FASTDDS_HOME)
+foreach(_env_var FASTRTPS_HOME FASTDDS_HOME FASTRTPS_ROOT FASTDDS_ROOT)
     if(DEFINED ENV{${_env_var}} AND EXISTS "$ENV{${_env_var}}")
         list(APPEND _fastrtps_PREFIX_HINTS "$ENV{${_env_var}}")
     endif()
 endforeach()
 
 if(WIN32)
-    # eProsima Windows installer writes to one of two naming schemes:
-    #   "C:/Program Files/eProsima/fastrtps <ver>"  (2.x legacy)
-    #   "C:/Program Files/eProsima/Fast DDS <ver>"  (2.14+ / 3.x)
-    foreach(_candidate
-            "C:/Program Files/eProsima/fastrtps 2"
-            "C:/Program Files/eProsima/fastrtps 2.6"
-            "C:/Program Files/eProsima/fastrtps 2.10"
-            "C:/Program Files/eProsima/fastrtps 2.11"
-            "C:/Program Files/eProsima/fastrtps 2.12"
-            "C:/Program Files/eProsima/fastrtps 2.13"
-            "C:/Program Files/eProsima/fastrtps 2.14"
-            "C:/Program Files/eProsima/fastrtps"
-            "C:/Program Files/eProsima/Fast DDS 2"
-            "C:/Program Files/eProsima/Fast DDS 2.14"
-            "C:/Program Files/eProsima/Fast DDS 2.14.0"
-            "C:/Program Files/eProsima/Fast DDS 3"
-            "C:/Program Files/eProsima/Fast DDS 3.0"
-            "C:/Program Files/eProsima/Fast DDS 3.0.0"
-            "C:/Program Files/eProsima/Fast DDS 3.1"
-            "C:/Program Files/eProsima/Fast DDS 3.1.0"
-            "C:/Program Files/eProsima/Fast DDS 3.2"
-            "C:/Program Files/eProsima/Fast DDS 3.2.0"
-            "C:/Program Files/eProsima/Fast DDS"
-            "C:/eProsima/fastrtps"
-            "C:/eProsima/Fast DDS"
-    )
-        if(EXISTS "${_candidate}")
-            list(APPEND _fastrtps_PREFIX_HINTS "${_candidate}")
+    # Resolve %ProgramFiles% from the environment so non-C: installs are handled.
+    set(_pf "$ENV{ProgramFiles}")
+    if(NOT _pf)
+        set(_pf "C:/Program Files")
+    endif()
+    file(TO_CMAKE_PATH "${_pf}" _pf)
+
+    # Glob all installed Fast DDS / fastrtps versions under each eProsima base
+    # directory.  This replaces a hard-coded version list and picks up any
+    # present or future release automatically.
+    foreach(_base "${_pf}/eProsima" "C:/eProsima")
+        if(NOT IS_DIRECTORY "${_base}")
+            continue()
         endif()
+        file(GLOB _fastrtps_glob_dirs LIST_DIRECTORIES true
+            "${_base}/fastrtps*"
+            "${_base}/Fast DDS*"
+        )
+        foreach(_d ${_fastrtps_glob_dirs})
+            if(IS_DIRECTORY "${_d}")
+                list(APPEND _fastrtps_PREFIX_HINTS "${_d}")
+            endif()
+        endforeach()
+        # Flat installs place config files directly under the eProsima base dir.
+        list(APPEND _fastrtps_PREFIX_HINTS "${_base}")
     endforeach()
+    unset(_pf)
+
+    # User-local (non-admin) installs written to %LOCALAPPDATA%\eProsima\.
+    if(DEFINED ENV{LOCALAPPDATA})
+        file(TO_CMAKE_PATH "$ENV{LOCALAPPDATA}" _localappdata)
+        if(IS_DIRECTORY "${_localappdata}/eProsima")
+            file(GLOB _fastrtps_user_dirs LIST_DIRECTORIES true
+                "${_localappdata}/eProsima/fastrtps*"
+                "${_localappdata}/eProsima/Fast DDS*"
+            )
+            foreach(_d ${_fastrtps_user_dirs})
+                if(IS_DIRECTORY "${_d}")
+                    list(APPEND _fastrtps_PREFIX_HINTS "${_d}")
+                endif()
+            endforeach()
+        endif()
+        unset(_localappdata)
+    endif()
 else()
     foreach(_candidate
             /usr/local
@@ -148,7 +166,9 @@ if(NOT fastrtps_FOUND)
     find_package(fastdds QUIET CONFIG
         HINTS
             "$ENV{FASTDDS_HOME}"
+            "$ENV{FASTDDS_ROOT}"
             "$ENV{FASTRTPS_HOME}"
+            "$ENV{FASTRTPS_ROOT}"
             ${_fastrtps_PREFIX_HINTS}
         PATH_SUFFIXES
             ${_fastrtps_CMAKE_SUFFIXES}
@@ -217,7 +237,13 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.21")
     find_package_handle_standard_args(fastrtps
         REQUIRED_VARS fastrtps_LIBRARY fastrtps_INCLUDE_DIR
         REASON_FAILURE_MESSAGE
-            "Install eProsima Fast DDS or set FASTRTPS_HOME / FASTDDS_HOME to the installation prefix, or point fastrtps_DIR at the directory containing fastrtpsConfig.cmake."
+            "eProsima Fast DDS was not found.\n"
+            "  Download installer: https://www.eprosima.com/index.php/downloads-all\n"
+            "  Docs (Windows):     https://fast-dds.docs.eprosima.com/en/latest/installation/binaries/windows_binaries.html\n"
+            "  After installing, either:\n"
+            "    - re-run cmake (the installer prefix is detected automatically), or\n"
+            "    - set FASTRTPS_HOME / FASTDDS_HOME to the installation root, or\n"
+            "    - pass -Dfastrtps_DIR=<dir> pointing at the folder containing fastrtpsConfig.cmake."
     )
 else()
     find_package_handle_standard_args(fastrtps
